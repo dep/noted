@@ -7,6 +7,11 @@ struct NoteLinkRelationships {
     let unresolved: [String]
 }
 
+enum SortCriterion: String, CaseIterable {
+    case name = "Name"
+    case modified = "Date"
+}
+
 enum FileBrowserError: LocalizedError {
     case noWorkspace
     case invalidName
@@ -38,6 +43,9 @@ class AppState: ObservableObject {
     @Published var canGoForward: Bool = false
     @Published var isCommandPalettePresented: Bool = false
     @Published var isRootNoteSheetPresented: Bool = false
+    
+    @AppStorage("sortCriterion") var sortCriterion: SortCriterion = .name
+    @AppStorage("sortAscending") var sortAscending: Bool = true
 
     private var history: [URL] = []
     private var historyIndex: Int = -1

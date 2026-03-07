@@ -60,30 +60,53 @@ private struct BrowserDeleteTarget {
     }
 }
 
-func buildFileTree(at url: URL) -> [FileNode] {
+func buildFileTree(at url: URL, sortCriterion: SortCriterion, ascending: Bool) -> [FileNode] {
     let fm = FileManager.default
     guard let contents = try? fm.contentsOfDirectory(
         at: url,
-        includingPropertiesForKeys: [.isDirectoryKey, .isHiddenKey],
+        includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .isHiddenKey],
         options: [.skipsHiddenFiles]
     ) else { return [] }
 
-    return contents
-        .compactMap { childURL -> FileNode? in
-            let isDir = (try? childURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            if isDir {
-                let children = buildFileTree(at: childURL)
-                return FileNode(url: childURL, children: children)
-            } else {
-                let ext = childURL.pathExtension.lowercased()
-                guard ext == "md" || ext == "markdown" || ext == "txt" else { return nil }
-                return FileNode(url: childURL, children: nil)
-            }
+    var items: [(url: URL, isDirectory: Bool, name: String, modificationDate: Date)] = []
+    
+    for childURL in contents {
+        let isDir = (try? childURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+        let modificationDate = (try? childURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        let name = childURL.lastPathComponent
+        items.append((childURL, isDir, name, modificationDate))
+    }
+    
+    // Sort with directories first
+    items.sort {
+        // First: directories before files
+        if $0.isDirectory != $1.isDirectory { 
+            return $0.isDirectory 
         }
-        .sorted {
-            if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        
+        // Second: apply sort criterion
+        let comparison: Bool
+        switch sortCriterion {
+        case .name:
+            comparison = $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        case .modified:
+            comparison = $0.modificationDate < $1.modificationDate
         }
+        
+        // Apply ascending/descending
+        return ascending ? comparison : !comparison
+    }
+    
+    return items.compactMap { item -> FileNode? in
+        if item.isDirectory {
+            let children = buildFileTree(at: item.url, sortCriterion: sortCriterion, ascending: ascending)
+            return FileNode(url: item.url, children: children)
+        } else {
+            let ext = item.url.pathExtension.lowercased()
+            guard ext == "md" || ext == "markdown" || ext == "txt" else { return nil }
+            return FileNode(url: item.url, children: nil)
+        }
+    }
 }
 
 struct FileTreeView: View {
@@ -134,6 +157,57 @@ struct FileTreeView: View {
                     .buttonStyle(ChromeButtonStyle())
                     .help("Refresh")
                 }
+            }
+            
+            // Sort Controls
+            HStack(spacing: 8) {
+                HStack(spacing: 0) {
+                    ForEach(SortCriterion.allCases, id: \.self) { criterion in
+                        Button(action: {
+                            if appState.sortCriterion == criterion {
+                                appState.sortAscending.toggle()
+                            } else {
+                                appState.sortCriterion = criterion
+                                appState.sortAscending = true
+                            }
+                            refresh()
+                        }) {
+                            Text(criterion.rawValue)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundStyle(appState.sortCriterion == criterion ? NotedTheme.textPrimary : NotedTheme.textMuted)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(appState.sortCriterion == criterion ? NotedTheme.row : Color.clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .stroke(appState.sortCriterion == criterion ? NotedTheme.border : Color.clear, lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .background(NotedTheme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                
+                Button(action: {
+                    appState.sortAscending.toggle()
+                    refresh()
+                }) {
+                    Image(systemName: appState.sortAscending ? "arrow.up" : "arrow.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(NotedTheme.textSecondary)
+                        .frame(width: 28, height: 24)
+                        .background(NotedTheme.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(NotedTheme.border, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(appState.sortAscending ? "Ascending" : "Descending")
+                
+                Spacer()
             }
 
             Rectangle()
@@ -224,7 +298,7 @@ struct FileTreeView: View {
             nodes = []
             return
         }
-        nodes = buildFileTree(at: root)
+        nodes = buildFileTree(at: root, sortCriterion: appState.sortCriterion, ascending: appState.sortAscending)
         expandPath(to: appState.selectedFile)
     }
 
