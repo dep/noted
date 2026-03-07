@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ImageIO
 
 struct EditorView: View {
     @EnvironmentObject var appState: AppState
@@ -401,6 +402,7 @@ class LinkAwareTextView: NSTextView {
     private var eventMonitor: Any?
     private var inlineImageViews: [String: NSImageView] = [:]
     private var failedInlineImageKeys: Set<String> = []
+    private var loadingInlineImageKeys: Set<String> = []
 
     private static let inlineImageCache = NSCache<NSString, NSImage>()
     private static let inlineImageRegex = try? NSRegularExpression(pattern: #"!\[[^\]]*\]\(([^)]+)\)"#)
@@ -606,7 +608,8 @@ class LinkAwareTextView: NSTextView {
         let matches = inlineImageMatches()
         let activeKeys = Set(matches.map(\.id))
 
-        for (key, view) in inlineImageViews where !activeKeys.contains(key) {
+        for key in Array(inlineImageViews.keys) where !activeKeys.contains(key) {
+            guard let view = inlineImageViews[key] else { continue }
             view.removeFromSuperview()
             inlineImageViews.removeValue(forKey: key)
         }
@@ -623,7 +626,7 @@ class LinkAwareTextView: NSTextView {
             } else {
                 inlineImageViews[match.id]?.removeFromSuperview()
                 inlineImageViews.removeValue(forKey: match.id)
-                loadInlineImage(from: resolvedURL, cacheKey: cacheKey)
+                loadInlineImage(from: resolvedURL, cacheKey: cacheKey, maxPixelSize: maxPreviewWidth * 2)
             }
         }
     }
@@ -686,30 +689,65 @@ class LinkAwareTextView: NSTextView {
         imageView.frame = frame
     }
 
-    private func loadInlineImage(from url: URL, cacheKey: NSString) {
+    private func loadInlineImage(from url: URL, cacheKey: NSString, maxPixelSize: CGFloat) {
+        let key = cacheKey as String
+        guard !loadingInlineImageKeys.contains(key), Self.inlineImageCache.object(forKey: cacheKey) == nil else { return }
+        loadingInlineImageKeys.insert(key)
+
         if url.isFileURL {
-            if let image = NSImage(contentsOf: url) {
+            if let image = downsampledImage(fromFileURL: url, maxPixelSize: maxPixelSize) ?? NSImage(contentsOf: url) {
                 Self.inlineImageCache.setObject(image, forKey: cacheKey)
             } else {
-                failedInlineImageKeys.insert(cacheKey as String)
+                failedInlineImageKeys.insert(key)
             }
-            applyMarkdownStyling()
+            loadingInlineImageKeys.remove(key)
             refreshInlineImagePreviews()
             return
         }
 
-        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
             guard let self else { return }
             DispatchQueue.main.async {
-                if let data, let image = NSImage(data: data) {
+                defer { self.loadingInlineImageKeys.remove(key) }
+
+                let isImageResponse = (response?.mimeType?.hasPrefix("image/") ?? true)
+                if isImageResponse, let data, let image = self.downsampledImage(from: data, maxPixelSize: maxPixelSize) ?? NSImage(data: data) {
                     Self.inlineImageCache.setObject(image, forKey: cacheKey)
                 } else {
-                    self.failedInlineImageKeys.insert(cacheKey as String)
+                    self.failedInlineImageKeys.insert(key)
                 }
-                self.applyMarkdownStyling()
                 self.refreshInlineImagePreviews()
             }
         }.resume()
+    }
+
+    private func downsampledImage(fromFileURL url: URL, maxPixelSize: CGFloat) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return downsampledImage(from: source, maxPixelSize: maxPixelSize)
+    }
+
+    private func downsampledImage(from data: Data, maxPixelSize: CGFloat) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return downsampledImage(from: source, maxPixelSize: maxPixelSize)
+    }
+
+    private func downsampledImage(from source: CGImageSource, maxPixelSize: CGFloat) -> NSImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(400, Int(maxPixelSize)),
+        ]
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+
+        let image = NSImage(cgImage: cgImage, size: .zero)
+        return image.size.width > 0 || image.size.height > 0 ? image : nil
     }
 
     private func resolvedInlineImageURL(for source: String) -> URL? {
