@@ -17,11 +17,11 @@ struct FolderPickerView: View {
                             .frame(width: 92, height: 92)
                             .blur(radius: 8)
 
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(Color.white.opacity(0.04))
                             .frame(width: 88, height: 88)
                             .overlay {
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
                                     .stroke(Color.white.opacity(0.08), lineWidth: 1)
                             }
 
@@ -63,7 +63,7 @@ struct FolderPickerView: View {
                 .padding(.horizontal, 32)
                 .padding(.vertical, 28)
                 .frame(maxWidth: 460)
-                .notedPanel(radius: 18)
+                .notedPanel(radius: 6)
 
                 Spacer(minLength: 0)
             }

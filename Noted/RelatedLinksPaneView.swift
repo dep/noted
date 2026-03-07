@@ -115,10 +115,10 @@ struct RelatedLinksPaneView: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 7)
                             .background {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
                                     .fill(NotedTheme.row)
                                     .overlay {
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
                                             .stroke(NotedTheme.rowBorder, lineWidth: 1)
                                     }
                             }
@@ -145,14 +145,14 @@ struct RelatedLinksPaneView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 7)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(NotedTheme.row)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(NotedTheme.rowBorder, lineWidth: 1)
-                                }
-                        }
+                            .background {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(NotedTheme.row)
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .stroke(NotedTheme.rowBorder, lineWidth: 1)
+                                    }
+                            }
                 }
             }
         }

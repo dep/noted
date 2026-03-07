@@ -362,10 +362,10 @@ struct FileNodeRow: View {
                 .padding(.vertical, 6)
                 .padding(.horizontal, 8)
                 .background {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(isSelected ? NotedTheme.accentSoft : NotedTheme.row)
                         .overlay {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
                                 .stroke(isSelected ? NotedTheme.accent : NotedTheme.rowBorder, lineWidth: 1)
                         }
                 }

@@ -12,11 +12,6 @@ struct EditorView: View {
 
                 RawEditor(text: $appState.fileContent)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(NotedTheme.border, lineWidth: 1)
-                    }
 
                 HStack {
                     Text("Autosaves after a short pause")
@@ -61,16 +56,10 @@ struct EditorView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [NotedTheme.panelElevated.opacity(0.85), NotedTheme.editorShell.opacity(0.75)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(NotedTheme.panelElevated)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(NotedTheme.border, lineWidth: 1)
                 }
         }
@@ -79,7 +68,7 @@ struct EditorView: View {
     private func editorHeader(for file: URL) -> some View {
         HStack(alignment: .center, spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(NotedTheme.accent.opacity(0.14))
                     .frame(width: 36, height: 36)
                 Image(systemName: "doc.text")
@@ -742,7 +731,7 @@ class LinkAwareTextView: NSTextView {
             let view = NSImageView()
             view.imageScaling = .scaleProportionallyUpOrDown
             view.wantsLayer = true
-            view.layer?.cornerRadius = 10
+            view.layer?.cornerRadius = 4
             view.layer?.masksToBounds = true
             view.layer?.borderWidth = 1
             view.layer?.borderColor = NSColor(NotedTheme.border).cgColor
@@ -1014,7 +1003,7 @@ final class YouTubePreviewView: NSView {
     override func layout() {
         super.layout()
         wantsLayer = true
-        layer?.cornerRadius = 10
+        layer?.cornerRadius = 4
         layer?.masksToBounds = true
         layer?.borderWidth = 1
         layer?.borderColor = NSColor(NotedTheme.border).cgColor

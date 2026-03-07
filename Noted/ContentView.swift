@@ -10,29 +10,28 @@ struct ContentView: View {
         ZStack {
             AppBackdrop()
 
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
                 headerBar
+                Rectangle().fill(NotedTheme.border).frame(height: 1)
 
                 HSplitView {
                     if isLeftSidebarVisible {
                         leftSidebar
                             .frame(minWidth: 220, idealWidth: 280, maxWidth: 420)
+                            .background(NotedTheme.panel)
                     }
 
                     EditorView()
-                        .padding(3)
                         .frame(minWidth: 420)
-                        .notedPanel(radius: 16)
+                        .background(NotedTheme.editorShell)
 
                     if isRightSidebarVisible {
                         TerminalPaneView()
-                            .padding(3)
                             .frame(minWidth: 280, idealWidth: 340, maxWidth: 620)
-                            .notedPanel(radius: 16)
+                            .background(NotedTheme.panel)
                     }
                 }
             }
-            .padding(10)
 
             if appState.isCommandPalettePresented {
                 CommandPaletteView()
@@ -67,19 +66,13 @@ struct ContentView: View {
         if isRelatedPaneVisible {
             VSplitView {
                 FileTreeView()
-                    .padding(3)
                     .frame(minHeight: 260)
-                    .notedPanel(radius: 16)
 
                 RelatedLinksPaneView()
-                    .padding(3)
                     .frame(minHeight: 180, idealHeight: 240)
-                    .notedPanel(radius: 16)
             }
         } else {
             FileTreeView()
-                .padding(3)
-                .notedPanel(radius: 16)
         }
     }
 
@@ -96,7 +89,7 @@ struct ContentView: View {
                         .foregroundStyle(NotedTheme.textMuted)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.04), in: Capsule(style: .continuous))
+                        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
             }
 
@@ -173,9 +166,9 @@ struct ContentView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .notedPanel(radius: 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(NotedTheme.panelElevated)
     }
 
     private func headerToggleButton(systemName: String, isActive: Bool, action: @escaping () -> Void, help: String) -> some View {
@@ -185,7 +178,7 @@ struct ContentView: View {
         }
         .buttonStyle(ChromeButtonStyle())
         .overlay {
-            Capsule(style: .continuous)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .stroke(isActive ? NotedTheme.accent.opacity(0.45) : Color.clear, lineWidth: 1)
         }
         .help(help)

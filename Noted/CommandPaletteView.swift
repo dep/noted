@@ -77,10 +77,10 @@ struct CommandPaletteView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .background {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(NotedTheme.row)
                         .overlay {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .stroke(NotedTheme.rowBorder, lineWidth: 1)
                         }
                 }
@@ -126,10 +126,10 @@ struct CommandPaletteView: View {
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 8)
                                     .background {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
                                             .fill(index == selectedIndex ? NotedTheme.accentSoft : NotedTheme.row)
                                             .overlay {
-                                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                RoundedRectangle(cornerRadius: 4, style: .continuous)
                                                     .stroke(index == selectedIndex ? NotedTheme.accent : NotedTheme.rowBorder, lineWidth: 1)
                                             }
                                     }
@@ -157,7 +157,7 @@ struct CommandPaletteView: View {
             }
             .padding(14)
             .frame(width: 640)
-            .notedPanel(radius: 18)
+            .notedPanel(radius: 6)
             .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 18)
         }
         .onAppear {

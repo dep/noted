@@ -68,11 +68,6 @@ struct TerminalPaneView: View {
 
             LocalTerminalView(workingDirectory: appState.rootURL?.path ?? NSHomeDirectory())
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(NotedTheme.border, lineWidth: 1)
-                }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
