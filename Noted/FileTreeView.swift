@@ -343,7 +343,7 @@ struct FileNodeRow: View {
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.caption2)
                             .frame(width: 10)
-                        Image(systemName: isExpanded ? "folder.open" : "folder")
+                        Image(systemName: "folder.fill")
                             .foregroundStyle(NotedTheme.accent)
                     } else {
                         Spacer().frame(width: 10)

@@ -17,6 +17,7 @@ targets:
     platform: macOS
     sources:
       - Noted
+      - Noted/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.noted.app
