@@ -305,8 +305,41 @@ extension LinkAwareTextView {
                 .link: inner,
             ], range: range)
         }
-        applyRegex("\\[[^\\]]+\\]\\([^)]+\\)", to: text, storage: storage) { range in
-            storage.addAttribute(.foregroundColor, value: MarkdownTheme.linkColor, range: range)
+        if let markdownLinkRegex = try? NSRegularExpression(pattern: "(?<!!)\\[([^\\]]+)\\]\\(([^)]+)\\)") {
+            markdownLinkRegex.enumerateMatches(in: storage.string, range: fullRange) { match, _, _ in
+                guard let match, match.numberOfRanges >= 3 else { return }
+                let full = match.range(at: 0)
+                let label = match.range(at: 1)
+                let destinationRange = match.range(at: 2)
+                let destination = text.substring(with: destinationRange).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: full)
+                storage.addAttributes([
+                    .foregroundColor: MarkdownTheme.linkColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                ], range: label)
+
+                if let url = URL(string: destination), url.scheme != nil {
+                    storage.addAttribute(.link, value: url, range: full)
+                }
+            }
+        }
+
+        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+            detector.enumerateMatches(in: storage.string, options: [], range: fullRange) { match, _, _ in
+                guard let match, let url = match.url else { return }
+                let range = match.range
+
+                if storage.attribute(.link, at: range.location, effectiveRange: nil) != nil {
+                    return
+                }
+
+                storage.addAttributes([
+                    .foregroundColor: MarkdownTheme.linkColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .link: url,
+                ], range: range)
+            }
         }
         applyRegex("^---$", to: text, storage: storage, options: [.anchorsMatchLines]) { range in
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
@@ -542,6 +575,11 @@ class LinkAwareTextView: NSTextView {
     }
 
     func handleLinkClick(_ link: Any) -> Bool {
+        if let url = link as? URL {
+            NSWorkspace.shared.open(url)
+            return true
+        }
+
         guard let name = link as? String else { return false }
         if let match = allFiles.first(where: { $0.deletingPathExtension().lastPathComponent == name }) {
             onOpenFile?(match)
