@@ -79,7 +79,7 @@ struct NotedApp: App {
         }
 
         Settings {
-            SettingsView()
+            SettingsView(settings: appState.settings)
                 .preferredColorScheme(.dark)
         }
     }
