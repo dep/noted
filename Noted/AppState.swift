@@ -64,6 +64,10 @@ class AppState: ObservableObject {
     // Settings
     let settings = SettingsManager()
 
+    // Mirror of settings.fileExtensionFilter as @Published so views can observe changes
+    @Published var fileExtensionFilter: String = SettingsManager().fileExtensionFilter
+
+    private var settingsCancellable: AnyCancellable?
     private var history: [URL] = []
     private var historyIndex: Int = -1
     private var navigatingHistory = false
@@ -86,6 +90,11 @@ class AppState: ObservableObject {
             .sink { [weak self] content in
                 guard let self, self.isDirty else { return }
                 self.saveCurrentFile(content: content)
+            }
+
+        settingsCancellable = settings.$fileExtensionFilter
+            .sink { [weak self] newValue in
+                self?.fileExtensionFilter = newValue
             }
 
         NotificationCenter.default.addObserver(

@@ -14,7 +14,7 @@ extension View {
 
 struct SettingsView: View {
     @AppStorage(kGitSSHAuthSock) private var sshAuthSock: String = ""
-    @StateObject private var settings = SettingsManager()
+    @ObservedObject var settings: SettingsManager
     @State private var isDetecting = false
     @State private var detectError: String?
 
@@ -239,6 +239,6 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(settings: SettingsManager())
         .preferredColorScheme(.dark)
 }

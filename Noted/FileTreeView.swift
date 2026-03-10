@@ -113,7 +113,6 @@ func buildFileTree(at url: URL, sortCriterion: SortCriterion, ascending: Bool, s
 
 struct FileTreeView: View {
     @EnvironmentObject var appState: AppState
-    @StateObject private var settings = SettingsManager()
     @State private var nodes: [FileNode] = []
     @State private var expandedDirs: Set<URL> = []
     @State private var editorAction: BrowserEditorAction?
@@ -265,7 +264,7 @@ struct FileTreeView: View {
                 expandPath(to: newFile)
                 revealSelection(with: proxy)
             }
-            .onChange(of: settings.fileExtensionFilter) { _, _ in
+            .onChange(of: appState.fileExtensionFilter) { _, _ in
                 refresh()
             }
             .sheet(item: $editorAction) { action in
@@ -304,7 +303,7 @@ struct FileTreeView: View {
             nodes = []
             return
         }
-        nodes = buildFileTree(at: root, sortCriterion: appState.sortCriterion, ascending: appState.sortAscending, settings: settings)
+        nodes = buildFileTree(at: root, sortCriterion: appState.sortCriterion, ascending: appState.sortAscending, settings: appState.settings)
         expandPath(to: appState.selectedFile)
     }
 

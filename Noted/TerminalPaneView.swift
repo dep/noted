@@ -26,12 +26,12 @@ struct LocalTerminalView: NSViewRepresentable {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             let escaped = workingDirectory.replacingOccurrences(of: " ", with: "\\ ")
             
-            // Use on-boot command if set, otherwise fall back to default
+            // Use on-boot command if set, otherwise just cd to project
             let commandToRun: String
             if let customCommand = onBootCommand, !customCommand.isEmpty {
                 commandToRun = "cd \(escaped) && \(customCommand)"
             } else {
-                commandToRun = "cd \(escaped) && CLAUDECODE=null claude --dangerously-skip-permissions"
+                commandToRun = "cd \(escaped)"
             }
             
             terminal.send(txt: commandToRun + "\n")
