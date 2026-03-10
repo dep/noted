@@ -97,10 +97,8 @@ class AppState: ObservableObject {
     }
 
     @objc private func handleAppTermination() {
-        guard let git = gitService, git.hasRemote() else { return }
-        try? git.pullRebase()
-        guard !git.hasConflicts() else { return }
-        try? git.push()
+        // Try auto-push if enabled (includes pulling, squashing, and pushing)
+        autoPushIfEnabled()
     }
 
     private func startWatching(_ url: URL) {
@@ -543,7 +541,10 @@ class AppState: ObservableObject {
     }
 
     func openFile(_ url: URL) {
-        if isDirty { saveCurrentFile(content: fileContent) }
+        if isDirty { 
+            saveCurrentFile(content: fileContent)
+            autoPushIfEnabled()
+        }
         dismissCommandPalette()
         dismissRootNoteSheet()
         if !navigatingHistory {
@@ -590,8 +591,13 @@ class AppState: ObservableObject {
     }
 
     private func scheduleGitCommit(for url: URL) {
-        guard let git = gitService else { return }
-        let message = "Update to \(url.lastPathComponent) on \(machineName)"
+        // Only auto-commit if enabled in settings
+        guard settings.autoSave, let git = gitService else { return }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let timestamp = dateFormatter.string(from: Date())
+        let message = "auto: update \(url.lastPathComponent) [\(timestamp)]"
 
         gitSyncStatus = .committing
         gitQueue.async { [weak self] in
@@ -612,5 +618,65 @@ class AppState: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Performs auto-push if enabled: squashes all unpushed commits and pushes
+    func autoPushIfEnabled() {
+        guard settings.autoPush, let git = gitService, git.hasRemote() else { return }
+        
+        gitSyncStatus = .pushing
+        gitQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                // Pull first to avoid conflicts
+                try git.pullRebase()
+                
+                guard !git.hasConflicts() else {
+                    DispatchQueue.main.async {
+                        self.gitSyncStatus = .conflict("Merge conflicts detected. Resolve manually.")
+                    }
+                    return
+                }
+                
+                // Check if there are unpushed commits
+                let ahead = git.aheadCount()
+                if ahead > 0 {
+                    // Squash all unpushed commits into one
+                    // This is done interactively via git rebase
+                    try self.squashUnpushedCommits(git: git)
+                    
+                    // Push the squashed commit
+                    try git.push()
+                }
+                
+                let newAhead = git.aheadCount()
+                DispatchQueue.main.async {
+                    self.gitAheadCount = newAhead
+                    self.gitSyncStatus = .idle
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.gitSyncStatus = .error(error.localizedDescription)
+                }
+            }
+        }
+    }
+    
+    /// Squashes all unpushed commits into a single commit
+    private func squashUnpushedCommits(git: GitService) throws {
+        // Use git reset --soft to squash all unpushed commits
+        // This keeps the changes staged but resets the commit history
+        let ahead = git.aheadCount()
+        guard ahead > 0 else { return }
+        
+        // Get the commit message from the most recent commit
+        let latestMessage = (try? git.run(["log", "-1", "--format=%B", "HEAD"]))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "auto: update notes"
+        
+        // Soft reset to the remote state
+        try git.run(["reset", "--soft", "HEAD~\(ahead)"])
+        
+        // Commit with the latest message (squashing all changes)
+        try git.commit(message: latestMessage)
     }
 }

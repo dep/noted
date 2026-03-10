@@ -184,7 +184,10 @@ struct ContentView: View {
                 }
 
                 if appState.selectedFile != nil {
-                    Button(action: { appState.saveCurrentFile(content: appState.fileContent) }) {
+                    Button(action: { 
+                        appState.saveCurrentFile(content: appState.fileContent)
+                        appState.autoPushIfEnabled()
+                    }) {
                         Image(systemName: "square.and.arrow.down")
                     }
                     .buttonStyle(PrimaryChromeButtonStyle())
