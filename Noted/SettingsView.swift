@@ -18,6 +18,8 @@ struct SettingsView: View {
     @State private var isDetecting = false
     @State private var detectError: String?
 
+    private let settingsFieldWidth: CGFloat = 440
+
     var body: some View {
         Form {
             // MARK: - On-Boot Command Section
@@ -64,6 +66,8 @@ struct SettingsView: View {
                     TextField("", text: $settings.fileExtensionFilter)
                         .font(.system(.body, design: .monospaced))
                         .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: settingsFieldWidth, alignment: .leading)
                         .placeholder(when: settings.fileExtensionFilter.isEmpty) {
                             Text("*")
                                 .foregroundStyle(.tertiary)
@@ -89,6 +93,34 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             } header: {
                 Text("File Browser")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+            }
+
+            // MARK: - Templates Section
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Templates Folder")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+
+                    TextField("", text: $settings.templatesDirectory)
+                        .font(.system(.body, design: .monospaced))
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: settingsFieldWidth, alignment: .leading)
+                        .placeholder(when: settings.templatesDirectory.isEmpty) {
+                            Text("templates")
+                                .foregroundStyle(.tertiary)
+                        }
+
+                    Text("Markdown files inside this folder are offered as templates when you trigger New Note. Use a path relative to the open workspace.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Templates")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
             }
 

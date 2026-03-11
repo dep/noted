@@ -33,7 +33,17 @@ enum FileBrowserError: LocalizedError, Equatable {
     }
 }
 
+struct TemplateRenameRequest: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 class AppState: ObservableObject {
+    enum CommandPaletteMode {
+        case files
+        case templates
+    }
+
     @Published var rootURL: URL?
     @Published var selectedFile: URL?
     @Published var fileContent: String = ""
@@ -48,8 +58,11 @@ class AppState: ObservableObject {
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
     @Published var isCommandPalettePresented: Bool = false
+    @Published var commandPaletteMode: CommandPaletteMode = .files
+    @Published var targetDirectoryForTemplate: URL?
     @Published var isRootNoteSheetPresented: Bool = false
     @Published var isSearchPresented: Bool = false
+    @Published var pendingTemplateRename: TemplateRenameRequest?
     @Published var searchMode: SearchMode = .currentFile
     // Current-file find state (shared so CMD-G works globally)
     @Published var searchQuery: String = ""
@@ -249,6 +262,68 @@ class AppState: ObservableObject {
         url.deletingPathExtension().lastPathComponent
     }
 
+    private func isMarkdownFile(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return ext == "md" || ext == "markdown"
+    }
+
+    private func normalizedTemplatesDirectoryPath() -> String {
+        let trimmed = settings.templatesDirectory
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return trimmed.isEmpty ? "templates" : trimmed
+    }
+
+    func templatesDirectoryURL() -> URL? {
+        guard let rootURL else { return nil }
+        return standardized(rootURL.appendingPathComponent(normalizedTemplatesDirectoryPath(), isDirectory: true))
+    }
+
+    func isTemplatesDirectory(_ url: URL) -> Bool {
+        guard let templatesDirectoryURL = templatesDirectoryURL() else { return false }
+        return standardized(url) == templatesDirectoryURL
+    }
+
+    func availableTemplates() -> [URL] {
+        guard let templatesDirectoryURL = templatesDirectoryURL() else { return [] }
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: templatesDirectoryURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: []
+        ) else { return [] }
+
+        return enumerator
+            .compactMap { $0 as? URL }
+            .map { standardized($0) }
+            .filter { isMarkdownFile($0) }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    func currentNoteDirectory() -> URL? {
+        if let selectedFile {
+            return selectedFile.deletingLastPathComponent()
+        }
+        return rootURL
+    }
+
+    private func uniqueUntitledNoteURL(in directory: URL, pathExtension: String = "md") -> URL {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let timestamp = dateFormatter.string(from: Date())
+        let fm = FileManager.default
+
+        var suffix = 0
+        while true {
+            let baseName = suffix == 0 ? "Untitled-\(timestamp)" : "Untitled-\(timestamp)-\(suffix)"
+            let candidate = standardized(directory.appendingPathComponent("\(baseName).\(pathExtension)"))
+            if !fm.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
     func relativePath(for url: URL) -> String {
         guard let rootURL else { return url.lastPathComponent }
         let rootPath = standardized(rootURL).path
@@ -356,6 +431,8 @@ class AppState: ObservableObject {
         fileContent = ""
         isDirty = false
         isCommandPalettePresented = false
+        commandPaletteMode = .files
+        pendingTemplateRename = nil
         history = []
         historyIndex = -1
         updateHistoryState()
@@ -392,6 +469,8 @@ class AppState: ObservableObject {
         // Clear all files
         allFiles = []
         allProjectFiles = []
+        commandPaletteMode = .files
+        pendingTemplateRename = nil
 
         // Finally, clear the root URL to show the splash screen
         rootURL = nil
@@ -506,11 +585,14 @@ class AppState: ObservableObject {
 
     func presentCommandPalette() {
         guard rootURL != nil else { return }
+        commandPaletteMode = .files
         isCommandPalettePresented = true
     }
 
     func dismissCommandPalette() {
         isCommandPalettePresented = false
+        commandPaletteMode = .files
+        targetDirectoryForTemplate = nil
     }
 
     func presentSearch(mode: SearchMode) {
@@ -523,9 +605,18 @@ class AppState: ObservableObject {
         isSearchPresented = false
     }
 
-    func presentRootNoteSheet() {
+    func presentRootNoteSheet(in directory: URL? = nil) {
         guard rootURL != nil else { return }
-        isRootNoteSheetPresented = true
+        
+        self.targetDirectoryForTemplate = directory
+        
+        if availableTemplates().isEmpty {
+            createNewUntitledNote()
+        } else {
+            pendingTemplateRename = nil
+            commandPaletteMode = .templates
+            isCommandPalettePresented = true
+        }
     }
 
     func dismissRootNoteSheet() {
@@ -553,33 +644,64 @@ class AppState: ObservableObject {
         return url
     }
 
-    func createNewUntitledNote() {
+    func createNewUntitledNote(promptForRename: Bool = false) {
         guard let root = rootURL else { return }
-        
-        // Generate unique name
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd-HHmmss"
-        let timestamp = dateFormatter.string(from: Date())
-        let baseName = "Untitled-\(timestamp).md"
-        
-        do {
-            let fileName = try prepareName(baseName, defaultExtension: "md")
-            let url = standardized(root.appendingPathComponent(fileName))
-            
-            // Create file directly without opening it
-            let fm = FileManager.default
-            guard !fm.fileExists(atPath: url.path) else { return }
-            
-            let created = fm.createFile(atPath: url.path, contents: Data(), attributes: nil)
-            guard created else { return }
-            
-            refreshAllFiles()
-            
-            // Now open in new tab
-            openFileInNewTab(url)
-        } catch {
-            // Silently fail
+
+        var directory = targetDirectoryForTemplate ?? currentNoteDirectory() ?? root
+        if let templatesDir = templatesDirectoryURL(), directory.path.hasPrefix(templatesDir.path) {
+            directory = root
         }
+
+        let url = uniqueUntitledNoteURL(in: directory)
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: url.path) else { return }
+
+        let created = fm.createFile(atPath: url.path, contents: Data(), attributes: nil)
+        guard created else { return }
+
+        refreshAllFiles()
+        openFileInNewTab(url)
+        if promptForRename {
+            pendingTemplateRename = TemplateRenameRequest(url: url)
+        }
+        targetDirectoryForTemplate = nil
+    }
+
+    @discardableResult
+    func createNoteFromTemplate(_ templateURL: URL) throws -> URL {
+        guard let root = rootURL else { throw FileBrowserError.noWorkspace }
+
+        // Determine destination: use explicit target if requested, else current note directory.
+        // If it's inside the templates folder itself, fall back to the root directory.
+        var directory = targetDirectoryForTemplate ?? currentNoteDirectory() ?? root
+        if let templatesDir = templatesDirectoryURL(), directory.path.hasPrefix(templatesDir.path) {
+            directory = root
+        }
+
+        let contents = try Data(contentsOf: templateURL)
+        let url = uniqueUntitledNoteURL(in: directory)
+        let created = FileManager.default.createFile(atPath: url.path, contents: contents, attributes: nil)
+
+        guard created else {
+            throw FileBrowserError.operationFailed("Could not create the note from the selected template.")
+        }
+
+        refreshAllFiles()
+        dismissCommandPalette()
+        openFileInNewTab(url)
+        pendingTemplateRename = TemplateRenameRequest(url: url)
+        targetDirectoryForTemplate = nil
+        return url
+    }
+
+    func dismissTemplateRenamePrompt() {
+        pendingTemplateRename = nil
+    }
+
+    func confirmTemplateRename(_ name: String) throws {
+        guard let pendingTemplateRename else { return }
+        _ = try renameItem(at: pendingTemplateRename.url, to: name)
+        self.pendingTemplateRename = nil
     }
 
     @discardableResult

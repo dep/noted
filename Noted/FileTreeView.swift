@@ -65,15 +65,17 @@ func buildFileTree(at url: URL, sortCriterion: SortCriterion, ascending: Bool, s
     guard let contents = try? fm.contentsOfDirectory(
         at: url,
         includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .isHiddenKey],
-        options: [.skipsHiddenFiles]
+        options: []
     ) else { return [] }
 
     var items: [(url: URL, isDirectory: Bool, name: String, modificationDate: Date)] = []
-    
+
     for childURL in contents {
         let isDir = (try? childURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         let modificationDate = (try? childURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         let name = childURL.lastPathComponent
+        if isDir && name == ".git" { continue }
+        if !isDir && name.hasPrefix(".") { continue }
         items.append((childURL, isDir, name, modificationDate))
     }
     
@@ -145,7 +147,7 @@ struct FileTreeView: View {
 
                 HStack(spacing: 8) {
                     Menu {
-                        Button("New Note") { presentCreateNote(in: appState.rootURL) }
+                        Button("New Note") { appState.presentRootNoteSheet(in: appState.rootURL) }
                         Button("New Folder") { presentCreateFolder(in: appState.rootURL) }
                     } label: {
                         Image(systemName: "plus")
@@ -265,6 +267,9 @@ struct FileTreeView: View {
                 revealSelection(with: proxy)
             }
             .onChange(of: appState.settings.fileExtensionFilter) { _, _ in
+                refresh()
+            }
+            .onChange(of: appState.settings.templatesDirectory) { _, _ in
                 refresh()
             }
             .sheet(item: $editorAction) { action in
@@ -411,6 +416,7 @@ struct FileNodeRow: View {
     private var isExpanded: Bool { expandedDirs.contains(node.url) }
     private var isSelected: Bool { appState.selectedFile == node.url }
     private var contextDirectory: URL { node.isDirectory ? node.url : node.url.deletingLastPathComponent() }
+    private var isTemplatesDirectory: Bool { node.isDirectory && appState.isTemplatesDirectory(node.url) }
 
     var body: some View {
         Group {
@@ -422,7 +428,7 @@ struct FileNodeRow: View {
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.caption2)
                             .frame(width: 10)
-                        Image(systemName: "folder.fill")
+                        Image(systemName: isTemplatesDirectory ? "folder.badge.gearshape.fill" : "folder.fill")
                             .foregroundStyle(NotedTheme.accent)
                     } else {
                         Spacer().frame(width: 10)
@@ -435,6 +441,10 @@ struct FileNodeRow: View {
                         .truncationMode(.middle)
                         .font(.system(size: 13, weight: isSelected ? .semibold : .medium, design: .rounded))
                         .foregroundStyle(isSelected ? Color.white : NotedTheme.textPrimary)
+
+                    if isTemplatesDirectory {
+                        TinyBadge(text: "Templates", color: NotedTheme.accent)
+                    }
 
                     Spacer()
                 }
@@ -451,7 +461,7 @@ struct FileNodeRow: View {
             }
             .buttonStyle(.plain)
             .contextMenu {
-                Button("New Note") { onCreateNote(contextDirectory) }
+                Button("New Note") { appState.presentRootNoteSheet(in: contextDirectory) }
                 Button("New Folder") { onCreateFolder(contextDirectory) }
                 Divider()
                 Button("Rename") { onRename(node.url, node.isDirectory) }
