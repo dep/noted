@@ -207,13 +207,17 @@ struct TagPageNoteRow: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        .onTapGesture {
-            let isCommandPressed = NSEvent.modifierFlags.contains(.command)
-            if isCommandPressed {
-                appState.openFileInNewTab(url)
-            } else {
-                appState.openFile(url)
-            }
-        }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onEnded { _ in
+                    // Check if Command key is pressed
+                    let isCommandPressed = NSEvent.modifierFlags.contains(.command)
+                    if isCommandPressed {
+                        appState.openFileInNewTab(url)
+                    } else {
+                        appState.openFile(url)
+                    }
+                }
+        )
     }
 }
