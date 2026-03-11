@@ -69,6 +69,10 @@ class AppState: ObservableObject {
     @Published var searchMatchIndex: Int = 0
     @Published var searchMatchCount: Int = 0
 
+    // Tags
+    @Published var isTagPageVisible: Bool = false
+    @Published var currentTag: String? = nil
+
     enum SearchMode { case currentFile, allFiles }
 
     // Git
@@ -364,6 +368,47 @@ class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Tags
+
+    /// Extracts all hashtags from text, normalizes to lowercase, removes duplicates
+    func extractTags(from text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"#([a-zA-Z][a-zA-Z0-9_\-\.]*)"#) else { return [] }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        var uniqueTags = Set<String>()
+        return matches.compactMap { match in
+            guard match.numberOfRanges > 1 else { return nil }
+            let raw = nsText.substring(with: match.range(at: 1))
+            let normalized = raw.lowercased()
+            guard !normalized.isEmpty, normalized.rangeOfCharacter(from: .letters) != nil else { return nil }
+            guard uniqueTags.insert(normalized).inserted else { return nil }
+            return normalized
+        }.sorted()
+    }
+
+    /// Returns all unique tags across all notes with their counts
+    func allTags() -> [String: Int] {
+        var tagCounts: [String: Int] = [:]
+        for url in allFiles {
+            guard let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let tags = extractTags(from: content)
+            for tag in tags {
+                tagCounts[tag, default: 0] += 1
+            }
+        }
+        return tagCounts
+    }
+
+    /// Returns all notes that contain a specific tag (case-insensitive)
+    func notesWithTag(_ tag: String) -> [URL] {
+        let normalizedTag = tag.lowercased()
+        return allFiles.filter { url in
+            guard let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
+            let tags = extractTags(from: content)
+            return tags.contains(normalizedTag)
+        }
+    }
+
     private func noteIndex() -> [String: URL] {
         allFiles
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
@@ -612,6 +657,18 @@ class AppState: ObservableObject {
 
     func dismissSearch() {
         isSearchPresented = false
+    }
+
+    // MARK: - Tag Page
+
+    func showTagPage(tag: String) {
+        currentTag = tag
+        isTagPageVisible = true
+    }
+
+    func closeTagPage() {
+        isTagPageVisible = false
+        currentTag = nil
     }
 
     func presentRootNoteSheet(in directory: URL? = nil) {

@@ -27,9 +27,15 @@ struct ContentView: View {
                         TabBarView()
                             .environmentObject(appState)
                         
-                        EditorView()
-                            .frame(minWidth: 420)
-                            .background(NotedTheme.editorShell)
+                        if appState.isTagPageVisible, let tag = appState.currentTag {
+                            TagPageView(tag: tag)
+                                .frame(minWidth: 420)
+                                .background(NotedTheme.editorShell)
+                        } else {
+                            EditorView()
+                                .frame(minWidth: 420)
+                                .background(NotedTheme.editorShell)
+                        }
                     }
 
                     if isRightSidebarVisible {
@@ -170,7 +176,10 @@ struct ContentView: View {
         if isRelatedPaneVisible {
             VSplitView {
                 FileTreeView()
-                    .frame(minHeight: 260)
+                    .frame(minHeight: 200)
+
+                TagsPaneView()
+                    .frame(minHeight: 120, idealHeight: 160)
 
                 RelatedLinksPaneView()
                     .frame(minHeight: 180, idealHeight: 240)
