@@ -1,6 +1,24 @@
 import SwiftUI
 import Combine
 
+enum SidebarPane: String, Codable, CaseIterable, Identifiable {
+    case files = "files"
+    case tags = "tags"
+    case links = "links"
+    case terminal = "terminal"
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .files: return "Files"
+        case .tags: return "Tags"
+        case .links: return "Related"
+        case .terminal: return "Terminal"
+        }
+    }
+}
+
 /// Manages application settings with persistence to a local JSON config file
 class SettingsManager: ObservableObject {
     @Published var onBootCommand: String {
@@ -18,6 +36,12 @@ class SettingsManager: ObservableObject {
     @Published var autoPush: Bool {
         didSet { save() }
     }
+    @Published var leftSidebarPanes: [SidebarPane] {
+        didSet { save() }
+    }
+    @Published var rightSidebarPanes: [SidebarPane] {
+        didSet { save() }
+    }
 
     let configPath: String
 
@@ -27,19 +51,25 @@ class SettingsManager: ObservableObject {
         var templatesDirectory: String
         var autoSave: Bool
         var autoPush: Bool
+        var leftSidebarPanes: [SidebarPane]?
+        var rightSidebarPanes: [SidebarPane]?
 
         init(
             onBootCommand: String,
             fileExtensionFilter: String,
             templatesDirectory: String = "templates",
             autoSave: Bool = false,
-            autoPush: Bool = false
+            autoPush: Bool = false,
+            leftSidebarPanes: [SidebarPane]? = nil,
+            rightSidebarPanes: [SidebarPane]? = nil
         ) {
             self.onBootCommand = onBootCommand
             self.fileExtensionFilter = fileExtensionFilter
             self.templatesDirectory = templatesDirectory
             self.autoSave = autoSave
             self.autoPush = autoPush
+            self.leftSidebarPanes = leftSidebarPanes
+            self.rightSidebarPanes = rightSidebarPanes
         }
 
         init(from decoder: Decoder) throws {
@@ -49,6 +79,8 @@ class SettingsManager: ObservableObject {
             templatesDirectory = try container.decodeIfPresent(String.self, forKey: .templatesDirectory) ?? "templates"
             autoSave = try container.decodeIfPresent(Bool.self, forKey: .autoSave) ?? false
             autoPush = try container.decodeIfPresent(Bool.self, forKey: .autoPush) ?? false
+            leftSidebarPanes = try container.decodeIfPresent([SidebarPane].self, forKey: .leftSidebarPanes)
+            rightSidebarPanes = try container.decodeIfPresent([SidebarPane].self, forKey: .rightSidebarPanes)
         }
     }
 
@@ -72,12 +104,16 @@ class SettingsManager: ObservableObject {
             self.templatesDirectory = config.templatesDirectory
             self.autoSave = config.autoSave
             self.autoPush = config.autoPush
+            self.leftSidebarPanes = config.leftSidebarPanes ?? [.files, .tags, .links]
+            self.rightSidebarPanes = config.rightSidebarPanes ?? [.terminal]
         } else {
             self.onBootCommand = ""
             self.fileExtensionFilter = "*.md, *.txt"
             self.templatesDirectory = "templates"
             self.autoSave = false
             self.autoPush = false
+            self.leftSidebarPanes = [.files, .tags, .links]
+            self.rightSidebarPanes = [.terminal]
         }
     }
 
@@ -125,7 +161,9 @@ class SettingsManager: ObservableObject {
             fileExtensionFilter: fileExtensionFilter,
             templatesDirectory: templatesDirectory,
             autoSave: autoSave,
-            autoPush: autoPush
+            autoPush: autoPush,
+            leftSidebarPanes: leftSidebarPanes,
+            rightSidebarPanes: rightSidebarPanes
         )
 
         guard let data = try? JSONEncoder().encode(config) else { return }

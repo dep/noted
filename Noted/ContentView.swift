@@ -5,7 +5,6 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @State private var isLeftSidebarVisible = true
     @State private var isRightSidebarVisible = true
-    @State private var isRelatedPaneVisible = true
     @State private var keyEventMonitor: Any?
 
     var body: some View {
@@ -40,7 +39,7 @@ struct ContentView: View {
                     }
 
                     if isRightSidebarVisible {
-                        TerminalPaneView()
+                        SidebarContainerView(isLeft: false)
                             .frame(minWidth: 280, idealWidth: 340, maxWidth: 620)
                             .background(NotedTheme.panel)
                     }
@@ -174,20 +173,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var leftSidebar: some View {
-        if isRelatedPaneVisible {
-            VSplitView {
-                FileTreeView()
-                    .frame(minHeight: 200)
-
-                TagsPaneView()
-                    .frame(minHeight: 120, idealHeight: 160)
-
-                RelatedLinksPaneView()
-                    .frame(minHeight: 180, idealHeight: 240)
-            }
-        } else {
-            FileTreeView()
-        }
+        SidebarContainerView(isLeft: true)
     }
 
     private var headerBar: some View {
@@ -265,15 +251,6 @@ struct ContentView: View {
                     action: { isLeftSidebarVisible.toggle() },
                     help: isLeftSidebarVisible ? "Hide Left Sidebar" : "Show Left Sidebar"
                 )
-
-                headerToggleButton(
-                    systemName: isRelatedPaneVisible ? "rectangle.bottomthird.inset.filled" : "rectangle.bottomthird.inset.filled",
-                    isActive: isRelatedPaneVisible,
-                    action: { isRelatedPaneVisible.toggle() },
-                    help: isRelatedPaneVisible ? "Collapse Related Notes" : "Expand Related Notes"
-                )
-                .disabled(!isLeftSidebarVisible)
-                .opacity(isLeftSidebarVisible ? 1 : 0.5)
 
                 headerToggleButton(
                     systemName: isRightSidebarVisible ? "sidebar.right" : "sidebar.right",
@@ -619,5 +596,161 @@ private struct RootNoteSheet: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Sidebar Framework
+
+struct SidebarContainerView: View {
+    @EnvironmentObject var appState: AppState
+    let isLeft: Bool
+    
+    var panes: [SidebarPane] {
+        let allPanes = isLeft ? appState.settings.leftSidebarPanes : appState.settings.rightSidebarPanes
+        return allPanes.filter { pane in
+            if pane == .links {
+                return true // Always show, we'll remove the toggle
+            }
+            return true
+        }
+    }
+    
+    var body: some View {
+        if panes.isEmpty {
+            VStack {
+                Spacer()
+                Text("Drag panels here")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(NotedTheme.textMuted)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(NotedTheme.panel)
+            .onDrop(of: [.plainText], isTargeted: nil) { providers in
+                handleDrop(providers: providers, at: 0)
+            }
+        } else {
+            VSplitView {
+                ForEach(panes) { pane in
+                    SidebarPaneWrapper(pane: pane, isLeft: isLeft)
+                }
+            }
+        }
+    }
+    
+    private func handleDrop(providers: [NSItemProvider], at index: Int) -> Bool {
+        guard let provider = providers.first else { return false }
+        
+        provider.loadObject(ofClass: NSString.self) { string, _ in
+            guard let id = string as? String, let draggedPane = SidebarPane(rawValue: id) else { return }
+            
+            DispatchQueue.main.async {
+                appState.settings.leftSidebarPanes.removeAll { $0 == draggedPane }
+                appState.settings.rightSidebarPanes.removeAll { $0 == draggedPane }
+                
+                var targetArray = isLeft ? appState.settings.leftSidebarPanes : appState.settings.rightSidebarPanes
+                let safeIndex = min(max(0, index), targetArray.count)
+                targetArray.insert(draggedPane, at: safeIndex)
+                
+                if isLeft {
+                    appState.settings.leftSidebarPanes = targetArray
+                } else {
+                    appState.settings.rightSidebarPanes = targetArray
+                }
+            }
+        }
+        return true
+    }
+}
+
+struct SidebarPaneWrapper: View {
+    @EnvironmentObject var appState: AppState
+    let pane: SidebarPane
+    let isLeft: Bool
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header with drag handle
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(NotedTheme.textMuted)
+                    .frame(width: 14)
+                
+                Text(pane.title)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(1.8)
+                    .foregroundStyle(NotedTheme.textMuted)
+                    .textCase(.uppercase)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(NotedTheme.panelElevated)
+            .onDrag {
+                NSItemProvider(object: pane.rawValue as NSString)
+            }
+            .onDrop(of: [.plainText], isTargeted: nil) { providers in
+                handleDrop(providers: providers, before: true)
+            }
+            
+            // Content
+            Group {
+                switch pane {
+                case .files:
+                    FileTreeView()
+                        .frame(minHeight: 150)
+                case .tags:
+                    TagsPaneView()
+                        .frame(minHeight: 100)
+                case .links:
+                    RelatedLinksPaneView()
+                        .frame(minHeight: 150)
+                case .terminal:
+                    TerminalPaneView()
+                        .frame(minHeight: 150)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onDrop(of: [.plainText], isTargeted: nil) { providers in
+                handleDrop(providers: providers, before: false)
+            }
+        }
+        .background(NotedTheme.panel)
+    }
+    
+    private func handleDrop(providers: [NSItemProvider], before: Bool) -> Bool {
+        guard let provider = providers.first else { return false }
+        
+        provider.loadObject(ofClass: NSString.self) { string, _ in
+            guard let id = string as? String, let draggedPane = SidebarPane(rawValue: id) else { return }
+            
+            DispatchQueue.main.async {
+                var targetArray = isLeft ? appState.settings.leftSidebarPanes : appState.settings.rightSidebarPanes
+                
+                // If dropping on itself, do nothing
+                if draggedPane == pane { return }
+                
+                appState.settings.leftSidebarPanes.removeAll { $0 == draggedPane }
+                appState.settings.rightSidebarPanes.removeAll { $0 == draggedPane }
+                
+                targetArray = isLeft ? appState.settings.leftSidebarPanes : appState.settings.rightSidebarPanes
+                
+                if let currentIndex = targetArray.firstIndex(of: pane) {
+                    let insertIndex = before ? currentIndex : currentIndex + 1
+                    targetArray.insert(draggedPane, at: insertIndex)
+                } else {
+                    targetArray.append(draggedPane)
+                }
+                
+                if isLeft {
+                    appState.settings.leftSidebarPanes = targetArray
+                } else {
+                    appState.settings.rightSidebarPanes = targetArray
+                }
+            }
+        }
+        return true
     }
 }
