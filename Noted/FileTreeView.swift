@@ -65,7 +65,7 @@ func buildFileTree(at url: URL, sortCriterion: SortCriterion, ascending: Bool, s
     guard let contents = try? fm.contentsOfDirectory(
         at: url,
         includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .isHiddenKey],
-        options: [.skipsHiddenFiles]
+        options: []
     ) else { return [] }
 
     var items: [(url: URL, isDirectory: Bool, name: String, modificationDate: Date)] = []
@@ -74,6 +74,7 @@ func buildFileTree(at url: URL, sortCriterion: SortCriterion, ascending: Bool, s
         let isDir = (try? childURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         let modificationDate = (try? childURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         let name = childURL.lastPathComponent
+        if !isDir && name.hasPrefix(".") { continue }
         items.append((childURL, isDir, name, modificationDate))
     }
     
@@ -145,7 +146,7 @@ struct FileTreeView: View {
 
                 HStack(spacing: 8) {
                     Menu {
-                        Button("New Note") { presentCreateNote(in: appState.rootURL) }
+                        Button("New Note") { appState.presentRootNoteSheet(in: appState.rootURL) }
                         Button("New Folder") { presentCreateFolder(in: appState.rootURL) }
                     } label: {
                         Image(systemName: "plus")
@@ -459,7 +460,7 @@ struct FileNodeRow: View {
             }
             .buttonStyle(.plain)
             .contextMenu {
-                Button("New Note") { onCreateNote(contextDirectory) }
+                Button("New Note") { appState.presentRootNoteSheet(in: contextDirectory) }
                 Button("New Folder") { onCreateFolder(contextDirectory) }
                 Divider()
                 Button("Rename") { onRename(node.url, node.isDirectory) }

@@ -87,6 +87,7 @@ struct NotedApp: App {
         Settings {
             SettingsView(settings: appState.settings)
                 .preferredColorScheme(.dark)
+                .frame(minWidth: 920, minHeight: 760)
         }
     }
 }

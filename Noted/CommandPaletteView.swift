@@ -8,14 +8,24 @@ struct CommandPaletteView: View {
     @State private var eventMonitor: Any?
     @FocusState private var isSearchFocused: Bool
 
+    private let blankTemplateURL = URL(fileURLWithPath: "/__noted_blank_template")
+
     private var results: [URL] {
         let files = sourceFiles
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedQuery.isEmpty else {
             let recent = appState.commandPaletteMode == .files ? appState.recentFiles : []
-            if !recent.isEmpty { return recent }
-            return Array(files.prefix(40))
+            var finalResults: [URL]
+            if !recent.isEmpty {
+                finalResults = recent
+            } else {
+                finalResults = Array(files.prefix(40))
+            }
+            if appState.commandPaletteMode == .templates {
+                finalResults.insert(blankTemplateURL, at: 0)
+            }
+            return finalResults
         }
 
         let needle = trimmedQuery.lowercased()
@@ -65,10 +75,16 @@ struct CommandPaletteView: View {
                 return appState.relativePath(for: $0.url).localizedStandardCompare(appState.relativePath(for: $1.url)) == .orderedAscending
             }
 
-        return scoredResults
+        var finalResults = scoredResults
             .map { $0.url }
             .prefix(40)
             .map { $0 }
+
+        if appState.commandPaletteMode == .templates {
+            finalResults.insert(blankTemplateURL, at: 0)
+        }
+
+        return finalResults
     }
 
     private var sourceFiles: [URL] {
@@ -214,11 +230,11 @@ struct CommandPaletteView: View {
                                         .foregroundStyle(NotedTheme.accent)
                                         .frame(width: 16)
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(url.lastPathComponent)
+                                        Text(primaryLabel(for: url))
                                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                                             .foregroundStyle(NotedTheme.textPrimary)
                                             .lineLimit(1)
-                                        Text(appState.relativePath(for: url))
+                                        Text(secondaryLabel(for: url))
                                             .font(.system(size: 11, weight: .medium, design: .rounded))
                                             .foregroundStyle(NotedTheme.textMuted)
                                             .lineLimit(1)
@@ -285,6 +301,9 @@ struct CommandPaletteView: View {
     }
 
     private func fileIcon(for url: URL) -> String {
+        if url == blankTemplateURL {
+            return "doc.badge.plus"
+        }
         if appState.commandPaletteMode == .templates {
             return "doc.badge.plus"
         }
@@ -302,7 +321,26 @@ struct CommandPaletteView: View {
         case .files:
             appState.openFile(url)
         case .templates:
-            _ = try? appState.createNoteFromTemplate(url)
+            if url == blankTemplateURL {
+                appState.createNewUntitledNote(promptForRename: true)
+                appState.dismissCommandPalette()
+            } else {
+                _ = try? appState.createNoteFromTemplate(url)
+            }
         }
+    }
+
+    private func primaryLabel(for url: URL) -> String {
+        if url == blankTemplateURL {
+            return "Create a note without a template"
+        }
+        return url.lastPathComponent
+    }
+
+    private func secondaryLabel(for url: URL) -> String {
+        if url == blankTemplateURL {
+            return "Blank note"
+        }
+        return appState.relativePath(for: url)
     }
 }

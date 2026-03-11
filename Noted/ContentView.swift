@@ -427,7 +427,7 @@ private struct TemplateRenameSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(confirmRename)
 
-                Text("The note already contains the selected template content. Give it a final name to keep working.")
+                Text("The note is ready. Give it a final name to keep working.")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(NotedTheme.textMuted)
             }
