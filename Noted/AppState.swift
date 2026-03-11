@@ -832,6 +832,7 @@ class AppState: ObservableObject {
         }
         dismissCommandPalette()
         dismissRootNoteSheet()
+        closeTagPage() // Close tag page when opening a file
         if !navigatingHistory {
             if historyIndex < history.count - 1 {
                 history = Array(history.prefix(historyIndex + 1))
