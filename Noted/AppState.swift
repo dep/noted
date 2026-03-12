@@ -894,6 +894,8 @@ class AppState: ObservableObject {
     }
 
     func openFileInNewTab(_ url: URL) {
+        persistDirtyFileIfNeeded()
+
         // If file already open in a tab, just switch to it
         if let existingIndex = tabs.firstIndex(of: .file(url)) {
             switchTab(to: existingIndex)
@@ -928,6 +930,8 @@ class AppState: ObservableObject {
     }
     
     func openTagInNewTab(_ tag: String) {
+        persistDirtyFileIfNeeded()
+
         // If tag already open in a tab, just switch to it
         if let existingIndex = tabs.firstIndex(of: .tag(tag)) {
             switchTab(to: existingIndex)

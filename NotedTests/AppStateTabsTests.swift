@@ -94,6 +94,19 @@ final class AppStateTabsTests: XCTestCase {
         XCTAssertEqual(sut.tabs[1], .file(fileB), "Second tab should be fileB")
         XCTAssertEqual(sut.activeTabIndex, 0, "Active tab should switch to existing fileA tab (index 0)")
     }
+
+    func test_openFileInNewTab_whenDirty_savesCurrentFileBeforeSwitchingContext() throws {
+        sut.openFile(fileA)
+        sut.fileContent = "Edited content"
+        sut.isDirty = true
+
+        sut.openFileInNewTab(fileB)
+
+        let saved = try String(contentsOf: fileA, encoding: .utf8)
+        XCTAssertEqual(saved, "Edited content")
+        XCTAssertEqual(sut.selectedFile, fileB)
+        XCTAssertFalse(sut.isDirty)
+    }
     
     // MARK: - Closing Tabs
     

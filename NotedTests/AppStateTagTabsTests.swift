@@ -120,6 +120,20 @@ final class AppStateTagTabsTests: XCTestCase {
         XCTAssertEqual(sut.tabs[1], .tag("ideas"))
     }
 
+    func test_openTagInNewTab_whenDirty_savesCurrentFileBeforeClearingSelection() throws {
+        sut.openFile(fileA)
+        sut.fileContent = "Unsaved changes"
+        sut.isDirty = true
+
+        sut.openTagInNewTab("work")
+
+        let saved = try String(contentsOf: fileA, encoding: .utf8)
+        XCTAssertEqual(saved, "Unsaved changes")
+        XCTAssertNil(sut.selectedFile)
+        XCTAssertEqual(sut.activeTab, .tag("work"))
+        XCTAssertFalse(sut.isDirty)
+    }
+
     // MARK: - Closing tag tabs
 
     func test_closeTagTab_removesItAndFocusesNeighbor() {
