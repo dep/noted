@@ -163,7 +163,6 @@ class AppState: ObservableObject {
     private var tabMRU: [TabItem] = []
     private let now: () -> Date
 
-    private var saveCancellable: AnyCancellable?
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var filePollCancellable: AnyCancellable?
     private var watchedFD: Int32 = -1
@@ -175,14 +174,6 @@ class AppState: ObservableObject {
 
     init(now: @escaping () -> Date = Date.init) {
         self.now = now
-        saveCancellable = $fileContent
-            .dropFirst()
-            .debounce(for: .seconds(1), scheduler: RunLoop.main)
-            .sink { [weak self] content in
-                guard let self, self.isDirty else { return }
-                self.saveCurrentFile(content: content)
-            }
-
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleAppTermination),
