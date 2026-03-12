@@ -121,6 +121,7 @@ struct PaneState {
     var tabMRU: [TabItem] = []
     var history: [URL] = []
     var historyIndex: Int = -1
+    var cursorRange: NSRange? = nil
 }
 
 class AppState: ObservableObject {
@@ -164,6 +165,7 @@ class AppState: ObservableObject {
     @Published var isNewNotePromptRequested: Bool = false
     @Published var pendingTemplateURL: URL? = nil
     @Published var pendingCursorPosition: Int? = nil
+    @Published var pendingCursorRange: NSRange? = nil
     @Published var commandPaletteMode: CommandPaletteMode = .files
     @Published var targetDirectoryForTemplate: URL?
     @Published var isRootNoteSheetPresented: Bool = false
@@ -1428,6 +1430,8 @@ class AppState: ObservableObject {
         paneStates[index].selectedFile = selectedFile
         paneStates[index].fileContent = fileContent
         paneStates[index].isDirty = isDirty
+        paneStates[index].cursorRange = pendingCursorRange
+        pendingCursorRange = nil
     }
 
     private func restorePane(index: Int) {
@@ -1438,6 +1442,7 @@ class AppState: ObservableObject {
         selectedFile = pane.selectedFile
         fileContent = pane.fileContent
         isDirty = pane.isDirty
+        pendingCursorRange = pane.cursorRange
         if let file = pane.selectedFile {
             startWatching(file)
         } else {
@@ -1475,19 +1480,20 @@ class AppState: ObservableObject {
 
     func focusPane(_ index: Int) {
         guard splitOrientation != nil, index == 0 || index == 1 else { return }
-        activePaneIndex = index
-        postFocusEditor()
+        switchPaneWithCursorSave(to: index)
     }
 
     func switchToOtherPane() {
         guard splitOrientation != nil else { return }
-        activePaneIndex = activePaneIndex == 0 ? 1 : 0
-        postFocusEditor()
+        switchPaneWithCursorSave(to: activePaneIndex == 0 ? 1 : 0)
     }
 
-    private func postFocusEditor() {
-        // Defer one run-loop pass so SwiftUI has swapped in the active EditorView
-        // before we ask the NSTextView to become first responder.
+    private func switchPaneWithCursorSave(to index: Int) {
+        // Ask the active text view to save its cursor range into pendingCursorRange synchronously.
+        NotificationCenter.default.post(name: .saveCursorPosition, object: nil)
+        // Switch pane (didSet snapshots old pane — now with cursor — then restores new pane).
+        activePaneIndex = index
+        // After SwiftUI swaps in the new active EditorView, focus it.
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .focusEditor, object: nil)
         }

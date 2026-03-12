@@ -8,6 +8,7 @@ extension Notification.Name {
     static let clearSearchHighlights = Notification.Name("Synapse.clearSearchHighlights")
     static let advanceSearchMatch   = Notification.Name("Synapse.advanceSearchMatch")
     static let focusEditor          = Notification.Name("Synapse.focusEditor")
+    static let saveCursorPosition   = Notification.Name("Synapse.saveCursorPosition")
 }
 
 enum SearchMatchKey {

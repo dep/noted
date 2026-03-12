@@ -166,6 +166,7 @@ struct RawEditor: NSViewRepresentable {
         context.coordinator.textView = textView
         textView.installSearchObservers()
         textView.installFocusObserver()
+        textView.installSaveCursorObserver(appState: context.coordinator.parent.appState)
 
         let scroll = NSScrollView()
         scroll.documentView = textView
@@ -192,7 +193,15 @@ struct RawEditor: NSViewRepresentable {
         textView.onMatchCountUpdate = { count in appState.searchMatchCount = count }
         textView.refreshInlineImagePreviews()
 
-        if let position = appState.pendingCursorPosition {
+        if let range = appState.pendingCursorRange {
+            appState.pendingCursorRange = nil
+            let len = textView.string.count
+            let safeLoc = min(range.location, len)
+            let safeLen = min(range.length, len - safeLoc)
+            let safeRange = NSRange(location: safeLoc, length: safeLen)
+            textView.setSelectedRange(safeRange)
+            textView.scrollRangeToVisible(safeRange)
+        } else if let position = appState.pendingCursorPosition {
             appState.pendingCursorPosition = nil
             let clamped = min(position, textView.string.count)
             textView.setSelectedRange(NSRange(location: clamped, length: 0))
@@ -520,6 +529,20 @@ class LinkAwareTextView: NSTextView {
         ) { [weak self] _ in
             guard let self, self.isEditable else { return }
             self.window?.makeFirstResponder(self)
+        }
+    }
+
+    private var saveCursorObserver: Any?
+
+    func installSaveCursorObserver(appState: AppState) {
+        guard saveCursorObserver == nil else { return }
+        saveCursorObserver = NotificationCenter.default.addObserver(
+            forName: .saveCursorPosition,
+            object: nil,
+            queue: .main
+        ) { [weak self, weak appState] _ in
+            guard let self, self.isEditable, let appState else { return }
+            appState.pendingCursorRange = self.selectedRange()
         }
     }
 
