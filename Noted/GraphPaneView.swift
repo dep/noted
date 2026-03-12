@@ -42,12 +42,6 @@ struct GraphPaneView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func nodeColor(isSelected: Bool, isGhost: Bool) -> Color {
-        if isSelected { return NotedTheme.accent }
-        if isGhost { return NotedTheme.textMuted.opacity(0.6) }
-        return NotedTheme.textSecondary.opacity(0.8)
-    }
-
     private func openNode(id: String) {
         guard let node = graph.nodes.first(where: { $0.id == id }),
               let url = node.url else { return }
@@ -66,6 +60,7 @@ private struct GraphCanvas: View {
         initialIsRunning: true,
         initialModelTransform: .identity
     )
+    @State private var scrollMonitor: Any?
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -84,6 +79,8 @@ private struct GraphCanvas: View {
                                     isSelected ? NotedTheme.textPrimary : NotedTheme.textSecondary
                                 )
                                 .lineLimit(1)
+                                // Cap label width so long filenames don't push nodes apart
+                                .frame(maxWidth: 80, alignment: .center)
                                 .padding(.top, 14)
                         }
                 }
@@ -103,17 +100,13 @@ private struct GraphCanvas: View {
                     .withGraphTapGesture(proxy, of: String.self) { nodeID in
                         onOpen(nodeID)
                     }
-                    .background(
-                        ScrollWheelZoomView { delta in
-                            let factor = pow(1.0015, -delta)
-                            graphState.modelTransform.scaling(by: factor)
-                        }
-                    )
             }
 
             // Zoom controls
             zoomControls
         }
+        .onAppear { installScrollMonitor() }
+        .onDisappear { removeScrollMonitor() }
     }
 
     private var zoomControls: some View {
@@ -122,7 +115,6 @@ private struct GraphCanvas: View {
                 graphState.modelTransform.scaling(by: 0.75)
             } label: {
                 Image(systemName: "minus")
-                    .font(.system(size: 10, weight: .bold))
             }
             .buttonStyle(GraphZoomButtonStyle())
             .help("Zoom out")
@@ -131,7 +123,6 @@ private struct GraphCanvas: View {
                 graphState.modelTransform.scaling(to: 1.0)
             } label: {
                 Image(systemName: "arrow.up.left.and.down.right.magnifyingglass")
-                    .font(.system(size: 10))
             }
             .buttonStyle(GraphZoomButtonStyle())
             .help("Reset zoom")
@@ -140,7 +131,6 @@ private struct GraphCanvas: View {
                 graphState.modelTransform.scaling(by: 1.33)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .bold))
             }
             .buttonStyle(GraphZoomButtonStyle())
             .help("Zoom in")
@@ -153,48 +143,36 @@ private struct GraphCanvas: View {
         if isGhost { return NotedTheme.textMuted.opacity(0.6) }
         return NotedTheme.textSecondary.opacity(0.8)
     }
+
+    private func installScrollMonitor() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            // Only handle events that are not in a momentum phase (avoids runaway zoom)
+            guard event.momentumPhase == [] else { return event }
+            let factor = pow(1.0015, -event.scrollingDeltaY)
+            graphState.modelTransform.scaling(by: factor)
+            return event
+        }
+    }
+
+    private func removeScrollMonitor() {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
+        }
+    }
 }
 
-private struct GraphZoomButtonStyle: ButtonStyle {
+// MARK: - Shared zoom button style (also used by GlobalGraphView)
+
+struct GraphZoomButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(width: 22, height: 22)
-            .foregroundStyle(NotedTheme.textMuted)
+            .font(.system(size: 12, weight: .medium))
+            .frame(width: 26, height: 26)
+            .foregroundStyle(NotedTheme.textSecondary)
             .background(
                 NotedTheme.panelElevated.opacity(configuration.isPressed ? 1 : 0.85),
-                in: RoundedRectangle(cornerRadius: 4)
+                in: RoundedRectangle(cornerRadius: 5)
             )
-    }
-}
-
-/// Transparent NSView that captures two-finger scroll events and forwards the
-/// vertical scroll delta to a Swift closure, used for scroll-to-zoom on the graph.
-struct ScrollWheelZoomView: NSViewRepresentable {
-    let onScroll: (Double) -> Void
-
-    func makeNSView(context: Context) -> _ScrollWheelCaptureView {
-        let view = _ScrollWheelCaptureView()
-        view.onScroll = onScroll
-        return view
-    }
-
-    func updateNSView(_ nsView: _ScrollWheelCaptureView, context: Context) {
-        nsView.onScroll = onScroll
-    }
-}
-
-final class _ScrollWheelCaptureView: NSView {
-    var onScroll: ((Double) -> Void)?
-
-    override var acceptsFirstResponder: Bool { false }
-
-    override func scrollWheel(with event: NSEvent) {
-        // scrollingDeltaY is positive when scrolling down (fingers moving down).
-        // Ignore momentum phase to avoid over-zooming after a flick.
-        guard event.phase != .mayBegin, event.momentumPhase == .none || event.momentumPhase == [] else {
-            super.scrollWheel(with: event)
-            return
-        }
-        onScroll?(event.scrollingDeltaY)
     }
 }

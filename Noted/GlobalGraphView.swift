@@ -1,5 +1,6 @@
 import SwiftUI
 import Grape
+import AppKit
 
 /// Global Graph view — full-vault force-directed graph showing all notes and their
 /// [[wikilink]] edges. Presented as an overlay sheet from the toolbar.
@@ -11,6 +12,7 @@ struct GlobalGraphView: View {
         initialIsRunning: true,
         initialModelTransform: .identity.scale(by: 1.0)
     )
+    @State private var scrollMonitor: Any?
 
     private var graph: NoteGraph {
         appState.vaultGraph()
@@ -44,6 +46,8 @@ struct GlobalGraphView: View {
                                         isSelected ? NotedTheme.textPrimary : NotedTheme.textSecondary
                                     )
                                     .lineLimit(1)
+                                    // Cap label width so long filenames don't distort the layout
+                                    .frame(maxWidth: 100, alignment: .center)
                                     .padding(.top, 16)
                             }
                     }
@@ -66,19 +70,13 @@ struct GlobalGraphView: View {
                         .withGraphTapGesture(proxy, of: String.self) { nodeID in
                             openNode(id: nodeID)
                         }
-                        .background(
-                            ScrollWheelZoomView { delta in
-                                let factor = pow(1.0015, -delta)
-                                graphState.modelTransform.scaling(by: factor)
-                            }
-                        )
                 }
                 .ignoresSafeArea()
             }
 
             // Header bar
             VStack(spacing: 0) {
-                HStack {
+                HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Graph View")
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
@@ -90,33 +88,31 @@ struct GlobalGraphView: View {
 
                     Spacer()
 
-                    HStack(spacing: 8) {
-                        // Zoom controls
-                        HStack(spacing: 4) {
-                            Button {
-                                graphState.modelTransform.scaling(by: 0.75)
-                            } label: {
-                                Image(systemName: "minus")
-                            }
-                            .buttonStyle(ChromeButtonStyle())
-                            .help("Zoom out")
-
-                            Button {
-                                graphState.modelTransform.scaling(to: 1.0)
-                            } label: {
-                                Image(systemName: "arrow.up.left.and.down.right.magnifyingglass")
-                            }
-                            .buttonStyle(ChromeButtonStyle())
-                            .help("Reset zoom")
-
-                            Button {
-                                graphState.modelTransform.scaling(by: 1.33)
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                            .buttonStyle(ChromeButtonStyle())
-                            .help("Zoom in")
+                    HStack(spacing: 6) {
+                        // Zoom controls — use GraphZoomButtonStyle for uniform sizing
+                        Button {
+                            graphState.modelTransform.scaling(by: 0.75)
+                        } label: {
+                            Image(systemName: "minus")
                         }
+                        .buttonStyle(GraphZoomButtonStyle())
+                        .help("Zoom out")
+
+                        Button {
+                            graphState.modelTransform.scaling(to: 1.0)
+                        } label: {
+                            Image(systemName: "arrow.up.left.and.down.right.magnifyingglass")
+                        }
+                        .buttonStyle(GraphZoomButtonStyle())
+                        .help("Reset zoom")
+
+                        Button {
+                            graphState.modelTransform.scaling(by: 1.33)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(GraphZoomButtonStyle())
+                        .help("Zoom in")
 
                         Divider()
                             .frame(height: 16)
@@ -150,6 +146,8 @@ struct GlobalGraphView: View {
             }
         }
         .frame(minWidth: 640, minHeight: 480)
+        .onAppear { installScrollMonitor() }
+        .onDisappear { removeScrollMonitor() }
     }
 
     private var emptyState: some View {
@@ -167,7 +165,7 @@ struct GlobalGraphView: View {
     private func nodeColor(isSelected: Bool, isGhost: Bool) -> Color {
         if isSelected { return NotedTheme.accent }
         if isGhost { return NotedTheme.textMuted.opacity(0.5) }
-        return Color(red: 0.47, green: 0.77, blue: 1.00).opacity(0.75) // accentSoft-ish
+        return Color(red: 0.47, green: 0.77, blue: 1.00).opacity(0.75)
     }
 
     private func openNode(id: String) {
@@ -175,5 +173,21 @@ struct GlobalGraphView: View {
               let url = node.url else { return }
         appState.openFile(url)
         isPresented = false
+    }
+
+    private func installScrollMonitor() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            guard event.momentumPhase == [] else { return event }
+            let factor = pow(1.0015, -event.scrollingDeltaY)
+            graphState.modelTransform.scaling(by: factor)
+            return event
+        }
+    }
+
+    private func removeScrollMonitor() {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
+        }
     }
 }
