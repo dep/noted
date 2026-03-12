@@ -2,8 +2,7 @@
 
 Minimal macOS markdown editor with a built-in terminal, wiki links, quick open, and inline image previews.
 
-<img width="1582" height="1035" alt="image" src="https://github.com/user-attachments/assets/116c7555-0796-4aa7-96e3-fcdfb13ca152" />
-
+<img width="1582" height="1035" alt="image" src="https://github.com/user-attachments/assets/f409440d-0d11-49c2-bb38-04ba16ce61d6" />
 
 ## Requirements
 
