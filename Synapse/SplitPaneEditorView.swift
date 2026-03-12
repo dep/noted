@@ -49,11 +49,14 @@ struct PaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             paneHeader
-            editorContent(for: appState.activePaneIndex == paneIndex ? appState.activeTab : tabItemForPane)
-                .background(SynapseTheme.editorShell)
-                .onTapGesture {
-                    appState.focusPane(paneIndex)
-                }
+            if isActive {
+                editorContent(for: appState.activeTab)
+                    .background(SynapseTheme.editorShell)
+            } else {
+                inactiveContent
+                    .background(SynapseTheme.editorShell)
+                    .onTapGesture { appState.focusPane(paneIndex) }
+            }
         }
         .overlay(
             RoundedRectangle(cornerRadius: 0)
@@ -62,11 +65,9 @@ struct PaneView: View {
         )
     }
 
-    private var tabItemForPane: TabItem? {
-        // When this pane is not active, we need to read its stored state
-        // We can't directly access paneStates (private), but the view re-renders on activePaneIndex change
-        // so this will show the correct data when active
-        nil
+    private var inactiveContent: some View {
+        let pane = appState.inactivePane(paneIndex)
+        return InactivePaneEditorView(pane: pane)
     }
 
     private var paneHeader: some View {
@@ -131,6 +132,45 @@ struct InactivePaneTabBar: View {
                     }
             }
             Spacer()
+        }
+    }
+}
+
+/// Read-only preview shown in an inactive split pane.
+/// Displays the pane's file content without a live NSTextView,
+/// so it doesn't interfere with the active pane's editor state.
+struct InactivePaneEditorView: View {
+    let pane: PaneState
+
+    var body: some View {
+        if let file = pane.selectedFile {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 13))
+                        .foregroundStyle(SynapseTheme.textMuted)
+                    Text(file.lastPathComponent)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SynapseTheme.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+                ScrollView {
+                    Text(pane.fileContent)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(SynapseTheme.textSecondary.opacity(0.7))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
