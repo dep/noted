@@ -5,23 +5,37 @@ import ImageIO
 struct EditorView: View {
     @EnvironmentObject var appState: AppState
 
+    /// When set, renders in read-only mode using these values instead of live appState.
+    var readOnlyFile: URL? = nil
+    var readOnlyContent: String? = nil
+
+    private var isReadOnly: Bool { readOnlyFile != nil }
+    private var displayFile: URL? { readOnlyFile ?? appState.selectedFile }
+    private var displayContent: String { readOnlyContent ?? appState.fileContent }
+
     var body: some View {
         VStack(spacing: 0) {
-            if let file = appState.selectedFile {
+            if let file = displayFile {
                 VStack(spacing: 0) {
                     editorHeader(for: file)
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
                         .padding(.bottom, 8)
 
-                    if appState.isSearchPresented && appState.searchMode == .currentFile {
+                    if !isReadOnly && appState.isSearchPresented && appState.searchMode == .currentFile {
                         FindBar()
                             .environmentObject(appState)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
 
-                    RawEditor(text: $appState.fileContent)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if isReadOnly {
+                        RawEditor(text: .constant(displayContent))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .allowsHitTesting(false)
+                    } else {
+                        RawEditor(text: $appState.fileContent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
 
                     HStack {
                         Text("Autosaves after a short pause")

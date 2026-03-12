@@ -67,7 +67,7 @@ struct PaneView: View {
 
     private var inactiveContent: some View {
         let pane = appState.inactivePane(paneIndex)
-        return InactivePaneEditorView(pane: pane)
+        return EditorView(readOnlyFile: pane.selectedFile, readOnlyContent: pane.fileContent)
     }
 
     private var paneHeader: some View {
@@ -136,44 +136,6 @@ struct InactivePaneTabBar: View {
     }
 }
 
-/// Read-only preview shown in an inactive split pane.
-/// Displays the pane's file content without a live NSTextView,
-/// so it doesn't interfere with the active pane's editor state.
-struct InactivePaneEditorView: View {
-    let pane: PaneState
-
-    var body: some View {
-        if let file = pane.selectedFile {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 13))
-                        .foregroundStyle(SynapseTheme.textMuted)
-                    Text(file.lastPathComponent)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(SynapseTheme.textSecondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-
-                ScrollView {
-                    Text(pane.fileContent)
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundStyle(SynapseTheme.textSecondary.opacity(0.7))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 12)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-}
 
 @ViewBuilder
 func editorContent(for tab: TabItem?) -> some View {
