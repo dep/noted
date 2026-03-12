@@ -104,6 +104,27 @@ enum TabItem: Hashable {
     }
 }
 
+// MARK: - Split Pane
+
+enum SplitOrientation: Equatable {
+    case vertical
+    case horizontal
+}
+
+struct PaneState {
+    var tabs: [TabItem] = []
+    var activeTabIndex: Int? = nil
+    var selectedFile: URL? = nil
+    var fileContent: String = ""
+    var isDirty: Bool = false
+    var closedTabs: [(item: TabItem, index: Int)] = []
+    var tabMRU: [TabItem] = []
+    var history: [URL] = []
+    var historyIndex: Int = -1
+    var cursorRange: NSRange? = nil
+    var scrollOffsetY: CGFloat? = nil
+}
+
 class AppState: ObservableObject {
     enum CommandPaletteMode {
         case files
@@ -122,6 +143,17 @@ class AppState: ObservableObject {
     @Published var tabs: [TabItem] = []
     @Published var activeTabIndex: Int? = nil
 
+    // Split Pane
+    @Published var splitOrientation: SplitOrientation? = nil
+    @Published var activePaneIndex: Int = 0 {
+        didSet {
+            guard oldValue != activePaneIndex else { return }
+            snapshotCurrentPane(index: oldValue)
+            restorePane(index: activePaneIndex)
+        }
+    }
+    private var paneStates: [PaneState] = [PaneState(), PaneState()]
+
     /// Returns the currently active TabItem, if any
     var activeTab: TabItem? {
         guard let index = activeTabIndex, index >= 0, index < tabs.count else { return nil }
@@ -134,6 +166,9 @@ class AppState: ObservableObject {
     @Published var isNewNotePromptRequested: Bool = false
     @Published var pendingTemplateURL: URL? = nil
     @Published var pendingCursorPosition: Int? = nil
+    @Published var pendingCursorRange: NSRange? = nil
+    @Published var pendingCursorTargetPaneIndex: Int? = nil
+    @Published var pendingScrollOffsetY: CGFloat? = nil
     @Published var commandPaletteMode: CommandPaletteMode = .files
     @Published var targetDirectoryForTemplate: URL?
     @Published var isRootNoteSheetPresented: Bool = false
@@ -158,12 +193,24 @@ class AppState: ObservableObject {
     // Settings
     let settings = SettingsManager()
 
-    private var history: [URL] = []
-    private var historyIndex: Int = -1
+    private var history: [URL] {
+        get { paneStates[activePaneIndex].history }
+        set { paneStates[activePaneIndex].history = newValue }
+    }
+    private var historyIndex: Int {
+        get { paneStates[activePaneIndex].historyIndex }
+        set { paneStates[activePaneIndex].historyIndex = newValue }
+    }
     private var navigatingHistory = false
     private var lastObservedModificationDate: Date?
-    private var closedTabs: [(item: TabItem, index: Int)] = []
-    private var tabMRU: [TabItem] = []
+    private var closedTabs: [(item: TabItem, index: Int)] {
+        get { paneStates[activePaneIndex].closedTabs }
+        set { paneStates[activePaneIndex].closedTabs = newValue }
+    }
+    private var tabMRU: [TabItem] {
+        get { paneStates[activePaneIndex].tabMRU }
+        set { paneStates[activePaneIndex].tabMRU = newValue }
+    }
     private let now: () -> Date
 
     private var fileWatcher: DispatchSourceFileSystemObject?
@@ -1196,6 +1243,9 @@ class AppState: ObservableObject {
             fileContent = ""
             isDirty = false
             tabMRU = []
+            if splitOrientation != nil {
+                closePane(activePaneIndex)
+            }
             return
         }
 
@@ -1371,6 +1421,145 @@ class AppState: ObservableObject {
                     self.gitSyncStatus = .error(error.localizedDescription)
                 }
             }
+        }
+    }
+
+    // MARK: - Split Pane
+
+    private func snapshotCurrentPane(index: Int) {
+        guard index < paneStates.count else { return }
+        paneStates[index].tabs = tabs
+        paneStates[index].activeTabIndex = activeTabIndex
+        paneStates[index].selectedFile = selectedFile
+        paneStates[index].fileContent = fileContent
+        paneStates[index].isDirty = isDirty
+        paneStates[index].cursorRange = pendingCursorRange
+        paneStates[index].scrollOffsetY = pendingScrollOffsetY
+        pendingCursorRange = nil
+        pendingScrollOffsetY = nil
+        pendingCursorTargetPaneIndex = nil
+    }
+
+    private func restorePane(index: Int) {
+        guard index < paneStates.count else { return }
+        let pane = paneStates[index]
+        tabs = pane.tabs
+        activeTabIndex = pane.activeTabIndex
+        selectedFile = pane.selectedFile
+        fileContent = pane.fileContent
+        isDirty = pane.isDirty
+        pendingCursorRange = pane.cursorRange
+        pendingScrollOffsetY = pane.scrollOffsetY
+        pendingCursorTargetPaneIndex = index
+        if let file = pane.selectedFile {
+            startWatching(file)
+        } else {
+            stopWatching()
+        }
+    }
+
+    func splitVertically() {
+        splitPane(orientation: .vertical)
+    }
+
+    func splitHorizontally() {
+        splitPane(orientation: .horizontal)
+    }
+
+    private func splitPane(orientation: SplitOrientation) {
+        snapshotCurrentPane(index: 0)
+        // Initialize pane 1 with same file as pane 0
+        paneStates[1] = PaneState()
+        if let currentFile = selectedFile {
+            paneStates[1].tabs = [.file(currentFile)]
+            paneStates[1].activeTabIndex = 0
+            paneStates[1].selectedFile = currentFile
+            paneStates[1].fileContent = fileContent
+        }
+        splitOrientation = orientation
+        // Switch to pane 1 without triggering didSet (set backing directly then sync)
+        let previousIndex = activePaneIndex
+        if previousIndex != 1 {
+            activePaneIndex = 1
+        } else {
+            restorePane(index: 1)
+        }
+    }
+
+    func focusPane(_ index: Int) {
+        guard splitOrientation != nil, index == 0 || index == 1 else { return }
+        switchPaneWithCursorSave(to: index)
+    }
+
+    func switchToOtherPane() {
+        guard splitOrientation != nil else { return }
+        switchPaneWithCursorSave(to: activePaneIndex == 0 ? 1 : 0)
+    }
+
+    private func switchPaneWithCursorSave(to index: Int) {
+        // Ask the active text view to save its cursor range into pendingCursorRange synchronously.
+        NotificationCenter.default.post(name: .saveCursorPosition, object: nil)
+        // Switch pane (didSet snapshots old pane — now with cursor — then restores new pane).
+        activePaneIndex = index
+        // After SwiftUI swaps in the new active EditorView, focus it.
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .focusEditor, object: nil)
+        }
+    }
+
+    func closePane(_ index: Int) {
+        guard splitOrientation != nil else { return }
+        let keepIndex = index == 0 ? 1 : 0
+        snapshotCurrentPane(index: activePaneIndex)
+
+        // Restore the pane we're keeping as pane 0
+        let keepState = paneStates[keepIndex]
+        paneStates[0] = keepState
+        paneStates[1] = PaneState()
+        splitOrientation = nil
+
+        // Manually set backing without triggering didSet
+        let wasActive = activePaneIndex
+        if wasActive != 0 {
+            activePaneIndex = 0
+        } else {
+            restorePane(index: 0)
+        }
+    }
+
+    /// Returns the stored pane snapshot for the given index (used by UI to render inactive pane).
+    func inactivePane(_ index: Int) -> PaneState {
+        guard index < paneStates.count else { return PaneState() }
+        if index == activePaneIndex {
+            // Return live state for active pane
+            var live = paneStates[index]
+            live.tabs = tabs
+            live.activeTabIndex = activeTabIndex
+            return live
+        }
+        return paneStates[index]
+    }
+
+    func openFileInSplit(_ url: URL) {
+        if splitOrientation == nil {
+            // No current split: create vertical split and open in pane 1
+            snapshotCurrentPane(index: 0)
+            paneStates[1] = PaneState()
+            paneStates[1].tabs = [.file(url)]
+            paneStates[1].activeTabIndex = 0
+            paneStates[1].selectedFile = url
+            paneStates[1].fileContent = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            splitOrientation = .vertical
+            activePaneIndex = 1
+        } else {
+            // Already split: open in the other pane
+            let targetPane = activePaneIndex == 0 ? 1 : 0
+            snapshotCurrentPane(index: activePaneIndex)
+            paneStates[targetPane].tabs = [.file(url)]
+            paneStates[targetPane].activeTabIndex = 0
+            paneStates[targetPane].selectedFile = url
+            paneStates[targetPane].fileContent = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            activePaneIndex = targetPane
         }
     }
 }

@@ -2,26 +2,95 @@ import SwiftUI
 import AppKit
 import ImageIO
 
+func consumePendingCursorRange(from appState: AppState, for textView: NSTextView, paneIndex: Int) -> NSRange? {
+    guard textView.isEditable,
+          let range = appState.pendingCursorRange,
+          appState.pendingCursorTargetPaneIndex == nil || appState.pendingCursorTargetPaneIndex == paneIndex else { return nil }
+    appState.pendingCursorRange = nil
+    appState.pendingCursorTargetPaneIndex = nil
+    return range
+}
+
+func consumePendingCursorPosition(from appState: AppState, for textView: NSTextView, paneIndex: Int) -> Int? {
+    guard textView.isEditable,
+          let position = appState.pendingCursorPosition,
+          appState.pendingCursorTargetPaneIndex == nil || appState.pendingCursorTargetPaneIndex == paneIndex else { return nil }
+    appState.pendingCursorPosition = nil
+    appState.pendingCursorTargetPaneIndex = nil
+    return position
+}
+
+func consumePendingScrollOffset(from appState: AppState, for textView: NSTextView, paneIndex: Int) -> CGFloat? {
+    guard textView.isEditable,
+          let offset = appState.pendingScrollOffsetY,
+          appState.pendingCursorTargetPaneIndex == nil || appState.pendingCursorTargetPaneIndex == paneIndex else { return nil }
+    appState.pendingScrollOffsetY = nil
+    return offset
+}
+
+func restoreScrollOffset(_ offset: CGFloat, in scrollView: NSScrollView) {
+    scrollView.layoutSubtreeIfNeeded()
+    let maxOffset = max(0, (scrollView.documentView?.bounds.height ?? 0) - scrollView.contentView.bounds.height)
+    let clampedOffset = min(max(0, offset), maxOffset)
+    scrollView.contentView.scroll(to: NSPoint(x: 0, y: clampedOffset))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+}
+
+func preserveScrollOffset(for textView: NSTextView, perform action: () -> Void) {
+    guard let scrollView = textView.enclosingScrollView else {
+        action()
+        return
+    }
+
+    let offset = scrollView.contentView.bounds.origin.y
+    action()
+    restoreScrollOffset(offset, in: scrollView)
+    DispatchQueue.main.async {
+        restoreScrollOffset(offset, in: scrollView)
+    }
+}
+
+@discardableResult
+func activatePaneOnReadOnlyInteraction(isEditable: Bool, onActivatePane: (() -> Void)?) -> Bool {
+    guard !isEditable else { return false }
+    onActivatePane?()
+    return true
+}
+
 struct EditorView: View {
     @EnvironmentObject var appState: AppState
+    var paneIndex: Int = 0
+
+    /// When set, renders in read-only mode using these values instead of live appState.
+    var readOnlyFile: URL? = nil
+    var readOnlyContent: String? = nil
+
+    private var isReadOnly: Bool { readOnlyFile != nil }
+    private var displayFile: URL? { readOnlyFile ?? appState.selectedFile }
+    private var displayContent: String { readOnlyContent ?? appState.fileContent }
 
     var body: some View {
         VStack(spacing: 0) {
-            if let file = appState.selectedFile {
+            if let file = displayFile {
                 VStack(spacing: 0) {
                     editorHeader(for: file)
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
                         .padding(.bottom, 8)
 
-                    if appState.isSearchPresented && appState.searchMode == .currentFile {
+                    if !isReadOnly && appState.isSearchPresented && appState.searchMode == .currentFile {
                         FindBar()
                             .environmentObject(appState)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
 
-                    RawEditor(text: $appState.fileContent)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if isReadOnly {
+                        RawEditor(text: .constant(displayContent), isEditable: false, paneIndex: paneIndex)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        RawEditor(text: $appState.fileContent, paneIndex: paneIndex)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
 
                     HStack {
                         Text("Autosaves after a short pause")
@@ -115,15 +184,16 @@ struct EditorView: View {
 
 struct RawEditor: NSViewRepresentable {
     @Binding var text: String
+    var isEditable: Bool = true
+    var paneIndex: Int = 0
     @EnvironmentObject var appState: AppState
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    static func configuredTextView(isEditable: Bool) -> LinkAwareTextView {
         let textView = LinkAwareTextView()
-        textView.delegate = context.coordinator
         textView.isRichText = true
-        textView.isEditable = true
+        textView.isEditable = isEditable
         textView.isSelectable = true
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
@@ -145,12 +215,21 @@ struct RawEditor: NSViewRepresentable {
             .font: MarkdownTheme.body,
             .foregroundColor: SynapseTheme.editorForeground,
         ]
+        return textView
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = Self.configuredTextView(isEditable: isEditable)
+        textView.delegate = context.coordinator
+        textView.onActivatePane = isEditable ? nil : { appState.focusPane(paneIndex) }
 
         // Use NSTextStorageDelegate to detect ALL text changes reliably
         textView.textStorage?.delegate = context.coordinator
 
         context.coordinator.textView = textView
         textView.installSearchObservers()
+        textView.installFocusObserver()
+        textView.installSaveCursorObserver(appState: context.coordinator.parent.appState)
 
         let scroll = NSScrollView()
         scroll.documentView = textView
@@ -175,10 +254,21 @@ struct RawEditor: NSViewRepresentable {
         textView.currentFileURL = appState.selectedFile
         textView.onOpenFile = { appState.openFile($0) }
         textView.onMatchCountUpdate = { count in appState.searchMatchCount = count }
+        textView.onActivatePane = isEditable ? nil : { appState.focusPane(paneIndex) }
         textView.refreshInlineImagePreviews()
 
-        if let position = appState.pendingCursorPosition {
-            appState.pendingCursorPosition = nil
+        if let range = consumePendingCursorRange(from: appState, for: textView, paneIndex: paneIndex) {
+            let len = textView.string.count
+            let safeLoc = min(range.location, len)
+            let safeLen = min(range.length, len - safeLoc)
+            let safeRange = NSRange(location: safeLoc, length: safeLen)
+            textView.setSelectedRange(safeRange)
+            if let offset = consumePendingScrollOffset(from: appState, for: textView, paneIndex: paneIndex) {
+                restoreScrollOffset(offset, in: scrollView)
+            } else {
+                textView.scrollRangeToVisible(safeRange)
+            }
+        } else if let position = consumePendingCursorPosition(from: appState, for: textView, paneIndex: paneIndex) {
             let clamped = min(position, textView.string.count)
             textView.setSelectedRange(NSRange(location: clamped, length: 0))
             textView.scrollRangeToVisible(NSRange(location: clamped, length: 0))
@@ -469,6 +559,7 @@ private func debugLog(_ msg: String) {
 class LinkAwareTextView: NSTextView {
     var allFiles: [URL] = []
     var onOpenFile: ((URL) -> Void)?
+    var onActivatePane: (() -> Void)?
     var currentFileURL: URL?
     var onMatchCountUpdate: ((Int) -> Void)?
 
@@ -491,6 +582,46 @@ class LinkAwareTextView: NSTextView {
     private static let youtubeDetector: NSDataDetector? = {
         try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
     }()
+
+    override func mouseDown(with event: NSEvent) {
+        if activatePaneOnReadOnlyInteraction(isEditable: isEditable, onActivatePane: onActivatePane) {
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    // MARK: - Focus support
+
+    private var focusObserver: Any?
+
+    func installFocusObserver() {
+        guard focusObserver == nil else { return }
+        focusObserver = NotificationCenter.default.addObserver(
+            forName: .focusEditor,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isEditable else { return }
+            preserveScrollOffset(for: self) {
+                self.window?.makeFirstResponder(self)
+            }
+        }
+    }
+
+    private var saveCursorObserver: Any?
+
+    func installSaveCursorObserver(appState: AppState) {
+        guard saveCursorObserver == nil else { return }
+        saveCursorObserver = NotificationCenter.default.addObserver(
+            forName: .saveCursorPosition,
+            object: nil,
+            queue: .main
+        ) { [weak self, weak appState] _ in
+            guard let self, self.isEditable, let appState else { return }
+            appState.pendingCursorRange = self.selectedRange()
+            appState.pendingScrollOffsetY = self.enclosingScrollView?.contentView.bounds.origin.y ?? 0
+        }
+    }
 
     // MARK: - Search highlight support
 
