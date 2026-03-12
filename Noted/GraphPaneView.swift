@@ -148,7 +148,7 @@ private struct GraphCanvas: View {
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             // Only handle events that are not in a momentum phase (avoids runaway zoom)
             guard event.momentumPhase == [] else { return event }
-            let factor = pow(1.0015, -event.scrollingDeltaY)
+            let factor = pow(1.0015, event.scrollingDeltaY)
             graphState.modelTransform.scaling(by: factor)
             return event
         }

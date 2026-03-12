@@ -6,7 +6,6 @@ import AppKit
 /// [[wikilink]] edges. Presented as an overlay sheet from the toolbar.
 struct GlobalGraphView: View {
     @EnvironmentObject var appState: AppState
-    @Binding var isPresented: Bool
 
     @State private var graphState = ForceDirectedGraphState(
         initialIsRunning: true,
@@ -77,14 +76,9 @@ struct GlobalGraphView: View {
             // Header bar
             VStack(spacing: 0) {
                 HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Graph View")
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundStyle(NotedTheme.textPrimary)
-                        Text("\(graph.nodes.filter { !$0.isGhost }.count) notes · \(graph.edges.count) links")
-                            .font(.system(size: 11))
-                            .foregroundStyle(NotedTheme.textMuted)
-                    }
+                    Text("\(graph.nodes.filter { !$0.isGhost }.count) notes · \(graph.edges.count) links")
+                        .font(.system(size: 11))
+                        .foregroundStyle(NotedTheme.textMuted)
 
                     Spacer()
 
@@ -126,14 +120,7 @@ struct GlobalGraphView: View {
                         .buttonStyle(ChromeButtonStyle())
                         .help(graphState.isRunning ? "Pause simulation" : "Resume simulation")
 
-                        Button {
-                            isPresented = false
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .buttonStyle(ChromeButtonStyle())
-                        .keyboardShortcut(.escape, modifiers: [])
-                        .help("Close Graph (Esc)")
+
                     }
                 }
                 .padding(.horizontal, 20)
@@ -172,13 +159,12 @@ struct GlobalGraphView: View {
         guard let node = graph.nodes.first(where: { $0.id == id }),
               let url = node.url else { return }
         appState.openFile(url)
-        isPresented = false
     }
 
     private func installScrollMonitor() {
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             guard event.momentumPhase == [] else { return event }
-            let factor = pow(1.0015, -event.scrollingDeltaY)
+            let factor = pow(1.0015, event.scrollingDeltaY)
             graphState.modelTransform.scaling(by: factor)
             return event
         }
