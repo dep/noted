@@ -21,6 +21,7 @@ enum SynapseTheme {
     static let accentSoft = Color(red: 0.20, green: 0.48, blue: 0.89)
     static let accentGlow = Color.clear
     static let success = Color(red: 0.37, green: 0.83, blue: 0.60)
+    static let error = Color(red: 0.95, green: 0.30, blue: 0.30)
 
     static let editorBackground = NSColor(white: 0.07, alpha: 1)
     static let editorForeground = NSColor(white: 0.92, alpha: 1)
@@ -28,6 +29,13 @@ enum SynapseTheme {
     static let editorCodeBackground = NSColor(white: 0.10, alpha: 1)
     static let editorSelection = NSColor(calibratedRed: 0.20, green: 0.44, blue: 0.76, alpha: 0.45)
     static let editorLink = NSColor(calibratedRed: 0.47, green: 0.77, blue: 1.00, alpha: 1)
+
+    // NSColor versions of SwiftUI Color constants for AppKit use
+    static let nsPanelElevated = NSColor(white: 0.10, alpha: 1)
+    static let nsBorder = NSColor(white: 1.0, alpha: 0.08)
+    static let nsTextPrimary = NSColor(white: 1.0, alpha: 0.92)
+    static let nsTextSecondary = NSColor(white: 1.0, alpha: 0.68)
+    static let nsError = NSColor(calibratedRed: 0.95, green: 0.30, blue: 0.30, alpha: 1)
 }
 
 struct AppBackdrop: View {

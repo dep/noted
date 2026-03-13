@@ -484,6 +484,73 @@ class AppState: ObservableObject {
 
     private static let wikiLinkRegex = try? NSRegularExpression(pattern: #"\[\[([^\]]+)\]\]"#)
 
+    // MARK: - Embeddable Notes
+
+    /// Represents an embed match with the note name and its location in the text
+    struct EmbedMatch: Equatable {
+        let noteName: String
+        let range: NSRange
+    }
+
+    private static let embedRegex = try? NSRegularExpression(pattern: #"!\[\[([^\]]+)\]\]"#)
+
+    /// Detects all Obsidian-style embeds (![[note-name]]) in the given text
+    func detectEmbeds(in text: String) -> [EmbedMatch] {
+        guard let regex = AppState.embedRegex else { return [] }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        return matches.compactMap { match in
+            guard match.numberOfRanges > 1 else { return nil }
+            let raw = nsText.substring(with: match.range(at: 1))
+            // Extract note name (before any pipe alias or heading anchor)
+            let noteName = raw
+                .components(separatedBy: "|").first?
+                .components(separatedBy: "#").first?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let normalized = normalizedNoteReference(noteName)
+            guard !normalized.isEmpty else { return nil }
+            return EmbedMatch(noteName: noteName, range: match.range)
+        }
+    }
+
+    /// Returns the content of the embedded note if it exists
+    /// - Parameters:
+    ///   - embed: The embed match to resolve
+    ///   - allowNesting: If false, converts any nested embeds to plain text (default: false)
+    func embedContent(for embed: EmbedMatch, allowNesting: Bool = false) -> String? {
+        let normalized = normalizedNoteReference(embed.noteName)
+        guard !normalized.isEmpty else { return nil }
+
+        // Find the note file (case-insensitive)
+        guard let noteURL = allFiles.first(where: {
+            normalizedNoteReference($0.deletingPathExtension().lastPathComponent) == normalized
+        }) else {
+            return nil
+        }
+
+        guard var content = try? String(contentsOf: noteURL, encoding: .utf8) else {
+            return nil
+        }
+
+        // If nesting is not allowed, convert any embedded notes in the content to plain text
+        if !allowNesting {
+            content = disableNestedEmbeds(in: content)
+        }
+
+        return content
+    }
+
+    /// Converts embed syntax (![[...]]) to plain text ([[...]]) to disable nesting
+    private func disableNestedEmbeds(in content: String) -> String {
+        guard let regex = AppState.embedRegex else { return content }
+        // Replace all ![[...]] with [[...]] (removing the ! to make it a regular wiki-link)
+        return regex.stringByReplacingMatches(
+            in: content,
+            range: NSRange(location: 0, length: (content as NSString).length),
+            withTemplate: "[[$1]]"
+        )
+    }
+
     private func wikiLinks(in text: String) -> [String] {
         guard let regex = AppState.wikiLinkRegex else { return [] }
         let nsText = text as NSString

@@ -1,5 +1,9 @@
 .DS_Store
 
+marketing-site/package-lock.json
+
+marketing-site/docs/.vitepress/cache/
+
 .env
 
 # AI custom context (personal/team preferences, gitignored)

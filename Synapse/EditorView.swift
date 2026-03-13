@@ -65,6 +65,8 @@ struct EditorView: View {
     var readOnlyFile: URL? = nil
     var readOnlyContent: String? = nil
 
+    @State private var embeddedNotes: [EmbeddedNoteInfo] = []
+
     private var isReadOnly: Bool { readOnlyFile != nil }
     private var displayFile: URL? { readOnlyFile ?? appState.selectedFile }
     private var displayContent: String { readOnlyContent ?? appState.fileContent }
@@ -84,12 +86,43 @@ struct EditorView: View {
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
 
-                    if isReadOnly {
-                        RawEditor(text: .constant(displayContent), isEditable: false, paneIndex: paneIndex)
+                    HStack(spacing: 0) {
+                        // Editor takes available space
+                        if isReadOnly {
+                            RawEditor(
+                                text: .constant(displayContent),
+                                isEditable: false,
+                                paneIndex: paneIndex,
+                                embeddedNotes: .constant([])
+                            )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        RawEditor(text: $appState.fileContent, paneIndex: paneIndex)
+                        } else {
+                            RawEditor(
+                                text: $appState.fileContent,
+                                paneIndex: paneIndex,
+                                embeddedNotes: $embeddedNotes
+                            )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+
+                        // Embedded notes panel on the right
+                        if !embeddedNotes.isEmpty {
+                            EmbeddedNotesPanel(
+                                notes: embeddedNotes,
+                                allFiles: appState.allFiles,
+                                onOpenFile: { url, openInNewTab in
+                                    if openInNewTab {
+                                        appState.openFileInNewTab(url)
+                                    } else {
+                                        appState.openFile(url)
+                                    }
+                                }
+                            )
+                            .frame(width: 320)
+                            .padding(.trailing, 12)
+                            .padding(.vertical, 8)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
                     }
 
                     HStack {
@@ -204,6 +237,7 @@ struct RawEditor: NSViewRepresentable {
     @Binding var text: String
     var isEditable: Bool = true
     var paneIndex: Int = 0
+    @Binding var embeddedNotes: [EmbeddedNoteInfo]
     @EnvironmentObject var appState: AppState
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -274,6 +308,23 @@ struct RawEditor: NSViewRepresentable {
         textView.onMatchCountUpdate = { count in appState.searchMatchCount = count }
         textView.onActivatePane = isEditable ? nil : { appState.focusPane(paneIndex) }
         textView.refreshInlineImagePreviews()
+
+        // Update embedded notes for side panel
+        DispatchQueue.main.async {
+            let matches = textView.inlineEmbedMatches()
+            let newNotes = matches.map { match in
+                EmbeddedNoteInfo(
+                    id: match.id,
+                    noteName: match.noteName,
+                    content: match.content,
+                    noteURL: match.noteURL,
+                    isUnresolved: match.noteURL == nil
+                )
+            }
+            if newNotes != embeddedNotes {
+                embeddedNotes = newNotes
+            }
+        }
 
         if let range = consumePendingCursorRange(from: appState, for: textView, paneIndex: paneIndex) {
             let len = textView.string.count
@@ -353,6 +404,148 @@ private enum MarkdownTheme {
     static let codeBackground = SynapseTheme.editorCodeBackground
 }
 
+/// Styles markdown text and returns an attributed string for display
+func styleMarkdownContent(_ content: String, fontSize: CGFloat = 12) -> NSAttributedString {
+    let storage = NSTextStorage(string: content)
+    let text = content as NSString
+    let fullRange = NSRange(location: 0, length: text.length)
+    
+    // Base attributes with smaller font for embedded display
+    let baseFont = NSFont.systemFont(ofSize: fontSize)
+    storage.addAttributes([
+        .font: baseFont,
+        .foregroundColor: SynapseTheme.editorForeground,
+    ], range: fullRange)
+    
+    // Header patterns with scaled sizes
+    let headerPatterns: [(String, NSFont)] = [
+        ("^#{6} .+$", NSFont.systemFont(ofSize: fontSize + 2, weight: .semibold)),
+        ("^#{5} .+$", NSFont.systemFont(ofSize: fontSize + 2, weight: .semibold)),
+        ("^#{4} .+$", NSFont.systemFont(ofSize: fontSize + 2, weight: .semibold)),
+        ("^### .+$",  NSFont.systemFont(ofSize: fontSize + 4, weight: .bold)),
+        ("^## .+$",   NSFont.systemFont(ofSize: fontSize + 6, weight: .bold)),
+        ("^# .+$",    NSFont.systemFont(ofSize: fontSize + 8, weight: .bold)),
+    ]
+    
+    for (pattern, font) in headerPatterns {
+        if let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) {
+            regex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+                guard let range = match?.range else { return }
+                storage.addAttributes([.font: font], range: range)
+                // Dim the hash markers
+                let hashEnd = (text.substring(with: range) as NSString).range(of: "^#{1,6} ", options: .regularExpression)
+                if hashEnd.location != NSNotFound {
+                    let absRange = NSRange(location: range.location + hashEnd.location, length: hashEnd.length)
+                    storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: absRange)
+                }
+            }
+        }
+    }
+    
+    // Bold: **text** or __text__
+    let boldPatterns = [
+        ("\\*\\*(.+?)\\*\\*", 2),
+        ("__(.+?)__", 2),
+    ]
+    for (pattern, delimLen) in boldPatterns {
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            regex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+                guard let range = match?.range else { return }
+                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: fontSize, weight: .bold), range: range)
+                // Dim delimiters
+                if range.length >= delimLen * 2 {
+                    storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: NSRange(location: range.location, length: delimLen))
+                    storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: NSRange(location: range.location + range.length - delimLen, length: delimLen))
+                }
+            }
+        }
+    }
+    
+    // Italic: *text* (but not **)
+    if let italicRegex = try? NSRegularExpression(pattern: "\\*(?!\\*)(.+?)(?<!\\*)\\*") {
+        italicRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            let desc = baseFont.fontDescriptor.withSymbolicTraits(.italic)
+            if let f = NSFont(descriptor: desc, size: fontSize) {
+                storage.addAttribute(.font, value: f, range: range)
+            }
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: NSRange(location: range.location, length: 1))
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: NSRange(location: range.location + range.length - 1, length: 1))
+        }
+    }
+    
+    // Inline code: `code`
+    if let codeRegex = try? NSRegularExpression(pattern: "`([^`\\n]+)`") {
+        codeRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            let monoFont = NSFont.monospacedSystemFont(ofSize: max(10, fontSize - 1), weight: .regular)
+            storage.addAttributes([
+                .font: monoFont,
+                .backgroundColor: MarkdownTheme.codeBackground,
+            ], range: range)
+        }
+    }
+    
+    // Code blocks: ```code```
+    if let codeBlockRegex = try? NSRegularExpression(pattern: "```[\\s\\S]*?```") {
+        codeBlockRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            let monoFont = NSFont.monospacedSystemFont(ofSize: max(10, fontSize - 1), weight: .regular)
+            storage.addAttributes([
+                .font: monoFont,
+                .backgroundColor: MarkdownTheme.codeBackground,
+                .foregroundColor: SynapseTheme.editorForeground,
+            ], range: range)
+        }
+    }
+    
+    // Blockquotes: > text
+    if let quoteRegex = try? NSRegularExpression(pattern: "^> .+$", options: [.anchorsMatchLines]) {
+        quoteRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
+        }
+    }
+    
+    // Wiki links: [[note]]
+    if let wikiRegex = try? NSRegularExpression(pattern: "\\[\\[[^\\]]+\\]\\]") {
+        wikiRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range, range.length > 4 else { return }
+            let inner = text.substring(with: NSRange(location: range.location + 2, length: range.length - 4))
+            storage.addAttributes([
+                .foregroundColor: MarkdownTheme.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .link: inner,
+            ], range: range)
+        }
+    }
+    
+    // Markdown links: [text](url)
+    if let mdLinkRegex = try? NSRegularExpression(pattern: "(?<!!)\\[([^\\]]+)\\]\\(([^)]+)\\)") {
+        mdLinkRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let match = match, match.numberOfRanges >= 3 else { return }
+            let full = match.range(at: 0)
+            let label = match.range(at: 1)
+            
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: full)
+            storage.addAttributes([
+                .foregroundColor: MarkdownTheme.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ], range: label)
+        }
+    }
+    
+    // Horizontal rules: ---
+    if let hrRegex = try? NSRegularExpression(pattern: "^---$", options: [.anchorsMatchLines]) {
+        hrRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
+        }
+    }
+    
+    return NSAttributedString(attributedString: storage)
+}
+
 // MARK: - Markdown styling extension
 
 extension LinkAwareTextView {
@@ -423,6 +616,16 @@ extension LinkAwareTextView {
         }
         applyRegex("^> .+$", to: text, storage: storage, options: [.anchorsMatchLines]) { range in
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
+        }
+        // Style embed patterns (![[note]]) - dimmed since they'll be rendered as blocks below
+        applyRegex("!\\[\\[[^\\]]+\\]\\]", to: text, storage: storage) { range in
+            guard range.length > 5 else { return }
+            let inner = (text.substring(with: range) as NSString)
+                .substring(with: NSRange(location: 3, length: range.length - 5))
+            storage.addAttributes([
+                .foregroundColor: MarkdownTheme.dimColor,
+                .link: inner,
+            ], range: range)
         }
         applyRegex("\\[\\[[^\\]]+\\]\\]", to: text, storage: storage) { range in
             guard range.length > 4 else { return }
@@ -592,6 +795,9 @@ class LinkAwareTextView: NSTextView {
     private var loadingYouTubeMetadataKeys: Set<String> = []
     private var cachedYouTubeMatches: [InlineYouTubeMatch] = []
     private var lastYouTubeScanText: String = ""
+
+    // MARK: - Embedded Notes (for side panel)
+    private static let embedRegex = try? NSRegularExpression(pattern: #"!\[\[([^\]]+)\]\]"#)
 
     private static let inlineImageCache = NSCache<NSString, NSImage>()
     private static let inlineImageRegex = try? NSRegularExpression(pattern: #"!\[[^\]]*\]\((.+?)\)(?=\s|$)"#, options: [.anchorsMatchLines])
@@ -953,7 +1159,50 @@ class LinkAwareTextView: NSTextView {
                 loadInlineImage(from: resolvedURL, cacheKey: cacheKey, maxPixelSize: maxPreviewWidth * 2)
             }
         }
+    }
 
+    // MARK: - Embedded Notes
+
+    func inlineEmbedMatches() -> [InlineEmbedMatch] {
+        guard let regex = Self.embedRegex else { return [] }
+        let nsText = string as NSString
+        let range = NSRange(location: 0, length: nsText.length)
+
+        return regex.matches(in: string, range: range).compactMap { match in
+            guard match.numberOfRanges > 1 else { return nil }
+            let raw = nsText.substring(with: match.range(at: 1))
+            // Extract note name (before any pipe alias or heading anchor)
+            let noteName = raw
+                .components(separatedBy: "|").first?
+                .components(separatedBy: "#").first?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !noteName.isEmpty else { return nil }
+
+            let fullRange = match.range(at: 0)
+            let paragraphRange = nsText.paragraphRange(for: fullRange)
+            let id = "\(fullRange.location)-\(noteName)"
+
+            // Find the note file
+            let normalizedName = noteName.lowercased()
+            let noteURL = allFiles.first { url in
+                url.deletingPathExtension().lastPathComponent.lowercased() == normalizedName
+            }
+
+            // Get content if note exists
+            var content: String?
+            if let noteURL = noteURL {
+                content = try? String(contentsOf: noteURL, encoding: .utf8)
+            }
+
+            return InlineEmbedMatch(
+                id: id,
+                range: fullRange,
+                paragraphRange: paragraphRange,
+                noteName: noteName,
+                content: content,
+                noteURL: noteURL
+            )
+        }
     }
 
     func inlineImageMatches() -> [InlineImageMatch] {
@@ -1250,11 +1499,270 @@ struct InlineImageMatch {
     let source: String
 }
 
+struct InlineEmbedMatch {
+    let id: String
+    let range: NSRange
+    let paragraphRange: NSRange
+    let noteName: String
+    let content: String?
+    let noteURL: URL?
+}
+
 struct InlineYouTubeMatch {
     let id: String
     let paragraphRange: NSRange
     let videoID: String
     let sourceURL: URL
+}
+
+// MARK: - Embedded Notes Data Model
+
+/// Information about an embedded note for the side panel
+struct EmbeddedNoteInfo: Identifiable, Equatable {
+    let id: String
+    let noteName: String
+    let content: String?
+    let noteURL: URL?
+    let isUnresolved: Bool
+    
+    static func == (lhs: EmbeddedNoteInfo, rhs: EmbeddedNoteInfo) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.noteName == rhs.noteName &&
+        lhs.content == rhs.content &&
+        lhs.noteURL == rhs.noteURL &&
+        lhs.isUnresolved == rhs.isUnresolved
+    }
+}
+
+// MARK: - Embedded Notes Side Panel
+
+struct EmbeddedNotesPanel: NSViewRepresentable {
+    let notes: [EmbeddedNoteInfo]
+    let allFiles: [URL]
+    let onOpenFile: (URL, Bool) -> Void // (url, openInNewTab)
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.backgroundColor = .clear
+
+        let documentView = FlippedNSView()
+        documentView.autoresizingMask = [.width]
+        scrollView.documentView = documentView
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let documentView = scrollView.documentView else { return }
+
+        // Remove existing embed views
+        documentView.subviews.forEach { $0.removeFromSuperview() }
+
+        let width: CGFloat = 304 // 320 - 16 padding
+        var currentY: CGFloat = 8
+        let spacing: CGFloat = 12
+
+        for note in notes {
+            let embedView = EmbeddedNoteView()
+            embedView.onOpenNote = { url, openInNewTab in
+                onOpenFile(url, openInNewTab)
+            }
+            embedView.configure(
+                noteName: note.noteName,
+                content: note.content,
+                noteURL: note.noteURL,
+                isUnresolved: note.isUnresolved
+            )
+
+            // Calculate height
+            let preferredSize = embedView.preferredSize(for: note.content)
+            let height = min(preferredSize.height, 400) // Max 400px per embed
+
+            embedView.frame = NSRect(x: 0, y: currentY, width: width, height: height)
+            documentView.addSubview(embedView)
+
+            currentY += height + spacing
+        }
+
+        // Set document view size
+        let totalHeight = max(currentY - spacing + 8, scrollView.bounds.height)
+        documentView.frame = NSRect(x: 0, y: 0, width: width, height: totalHeight)
+    }
+}
+
+// NSView subclass with flipped coordinate system so (0,0) is at top-left
+final class FlippedNSView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+final class EmbeddedNoteView: NSView {
+    private let contentScrollView = NSScrollView()
+    private let contentTextView = NSTextView()
+    private let titleField = NSTextField(labelWithString: "")
+    private let borderView = NSView()
+    private let openButton = NSButton()
+    private var targetURL: URL?
+    var onOpenNote: ((URL, Bool) -> Void)? // (url, openInNewTab)
+
+    // Fixed dimensions for the right-aligned panel
+    private let panelWidth: CGFloat = 280
+    private let maxPanelHeight: CGFloat = 400
+    private let minPanelHeight: CGFloat = 120
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    func configure(noteName: String, content: String?, noteURL: URL?, isUnresolved: Bool) {
+        targetURL = noteURL
+        titleField.stringValue = isUnresolved ? "Note not found: \(noteName)" : noteName
+
+        if isUnresolved {
+            contentTextView.string = ""
+            contentScrollView.isHidden = true
+            borderView.layer?.backgroundColor = SynapseTheme.nsPanelElevated.cgColor
+            borderView.layer?.borderColor = SynapseTheme.nsError.cgColor
+        } else if let content = content {
+            let styledContent = styleMarkdownContent(content, fontSize: 11)
+            contentTextView.textStorage?.setAttributedString(styledContent)
+            contentScrollView.isHidden = false
+            borderView.layer?.backgroundColor = SynapseTheme.nsPanelElevated.cgColor
+            borderView.layer?.borderColor = SynapseTheme.nsBorder.cgColor
+        }
+
+        openButton.isHidden = (noteURL == nil)
+    }
+
+    override func layout() {
+        super.layout()
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+
+        let padding: CGFloat = 12
+        let buttonHeight: CGFloat = 28
+        let titleHeight: CGFloat = 20
+        let spacing: CGFloat = 8
+
+        // Border view fills the entire frame
+        borderView.frame = bounds
+
+        // Title at top
+        titleField.frame = NSRect(
+            x: padding,
+            y: bounds.height - padding - titleHeight,
+            width: bounds.width - padding * 2,
+            height: titleHeight
+        )
+
+        // Open button at bottom
+        openButton.frame = NSRect(
+            x: bounds.width - padding - 80,
+            y: padding,
+            width: 80,
+            height: buttonHeight
+        )
+
+        // Content scroll view fills the middle area
+        if !contentScrollView.isHidden {
+            let contentY = buttonHeight + padding + spacing
+            let contentHeight = bounds.height - contentY - titleHeight - spacing * 2
+            contentScrollView.frame = NSRect(
+                x: padding,
+                y: contentY,
+                width: bounds.width - padding * 2,
+                height: max(0, contentHeight)
+            )
+        }
+    }
+
+    @objc private func openNote() {
+        guard let url = targetURL else { return }
+        // Check if Command key is held (for opening in new tab)
+        let openInNewTab = NSEvent.modifierFlags.contains(.command)
+        onOpenNote?(url, openInNewTab)
+    }
+
+    private func setup() {
+        // Border view
+        borderView.wantsLayer = true
+        borderView.layer?.cornerRadius = 6
+        borderView.layer?.masksToBounds = true
+        borderView.layer?.borderWidth = 1
+        borderView.layer?.backgroundColor = SynapseTheme.nsPanelElevated.cgColor
+        borderView.layer?.borderColor = SynapseTheme.nsBorder.cgColor
+        borderView.autoresizingMask = [.width, .height]
+        addSubview(borderView)
+
+        // Title field
+        titleField.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleField.textColor = SynapseTheme.nsTextPrimary
+        titleField.lineBreakMode = .byTruncatingTail
+        addSubview(titleField)
+
+        // Content text view (read-only)
+        contentTextView.isEditable = false
+        contentTextView.isSelectable = true
+        contentTextView.isRichText = false
+        contentTextView.backgroundColor = SynapseTheme.editorCodeBackground
+        contentTextView.textContainerInset = NSSize(width: 8, height: 8)
+        contentTextView.font = .systemFont(ofSize: 11)
+        contentTextView.textColor = SynapseTheme.nsTextSecondary
+
+        // Content scroll view
+        contentScrollView.documentView = contentTextView
+        contentScrollView.hasVerticalScroller = true
+        contentScrollView.autohidesScrollers = true
+        contentScrollView.borderType = .bezelBorder
+        contentScrollView.backgroundColor = SynapseTheme.editorCodeBackground
+        contentScrollView.isHidden = true
+        addSubview(contentScrollView)
+
+        // Open button
+        openButton.title = "Open"
+        openButton.target = self
+        openButton.action = #selector(openNote)
+        openButton.bezelStyle = .rounded
+        openButton.font = .systemFont(ofSize: 11, weight: .medium)
+        addSubview(openButton)
+    }
+
+    // Return the preferred size for this panel
+    func preferredSize(for content: String?) -> NSSize {
+        let padding: CGFloat = 12
+        let buttonHeight: CGFloat = 28
+        let titleHeight: CGFloat = 20
+        let spacing: CGFloat = 8
+
+        if content == nil {
+            // Unresolved: just title + button
+            return NSSize(width: panelWidth, height: minPanelHeight)
+        }
+
+        // Calculate content height based on text
+        let textStorage = NSTextStorage(string: content!)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(containerSize: NSSize(width: panelWidth - padding * 2 - 20, height: .greatestFiniteMagnitude))
+        textContainer.lineFragmentPadding = 0
+
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let contentHeight = layoutManager.usedRect(for: textContainer).height + 16 // +16 for insets
+        let totalHeight = padding + buttonHeight + spacing + min(contentHeight, 300) + spacing + titleHeight + padding
+
+        return NSSize(width: panelWidth, height: min(max(totalHeight, minPanelHeight), maxPanelHeight))
+    }
 }
 
 final class YouTubePreviewView: NSView {
