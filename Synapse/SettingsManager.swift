@@ -170,7 +170,7 @@ class SettingsManager: ObservableObject {
             self.dailyNotesEnabled = config.dailyNotesEnabled ?? false
             self.dailyNotesFolder = config.dailyNotesFolder ?? "daily"
             self.dailyNotesTemplate = config.dailyNotesTemplate ?? ""
-            self.dailyNotesOpenOnStartup = config.dailyNotesOpenOnStartup ?? true
+            self.dailyNotesOpenOnStartup = config.dailyNotesOpenOnStartup ?? false
             self.autoSave = config.autoSave
             self.autoPush = config.autoPush
             self.leftSidebarPanes = config.leftSidebarPanes ?? [.files, .tags, .links]
@@ -186,7 +186,7 @@ class SettingsManager: ObservableObject {
             self.dailyNotesEnabled = false
             self.dailyNotesFolder = "daily"
             self.dailyNotesTemplate = ""
-            self.dailyNotesOpenOnStartup = true
+            self.dailyNotesOpenOnStartup = false
             self.autoSave = false
             self.autoPush = false
             self.leftSidebarPanes = [.files, .tags, .links]
