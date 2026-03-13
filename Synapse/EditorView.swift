@@ -424,6 +424,16 @@ extension LinkAwareTextView {
         applyRegex("^> .+$", to: text, storage: storage, options: [.anchorsMatchLines]) { range in
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
         }
+        // Style embed patterns (![[note]]) - dimmed since they'll be rendered as blocks below
+        applyRegex("!\\[\\[[^\\]]+\\]\\]", to: text, storage: storage) { range in
+            guard range.length > 5 else { return }
+            let inner = (text.substring(with: range) as NSString)
+                .substring(with: NSRange(location: 3, length: range.length - 5))
+            storage.addAttributes([
+                .foregroundColor: MarkdownTheme.dimColor,
+                .link: inner,
+            ], range: range)
+        }
         applyRegex("\\[\\[[^\\]]+\\]\\]", to: text, storage: storage) { range in
             guard range.length > 4 else { return }
             let inner = (text.substring(with: range) as NSString)
@@ -592,6 +602,11 @@ class LinkAwareTextView: NSTextView {
     private var loadingYouTubeMetadataKeys: Set<String> = []
     private var cachedYouTubeMatches: [InlineYouTubeMatch] = []
     private var lastYouTubeScanText: String = ""
+
+    // MARK: - Embedded Notes
+    private var inlineEmbedViews: [String: EmbeddedNoteView] = [:]
+
+    private static let embedRegex = try? NSRegularExpression(pattern: #"!\[\[([^\]]+)\]\]"#)
 
     private static let inlineImageCache = NSCache<NSString, NSImage>()
     private static let inlineImageRegex = try? NSRegularExpression(pattern: #"!\[[^\]]*\]\((.+?)\)(?=\s|$)"#, options: [.anchorsMatchLines])
@@ -954,6 +969,125 @@ class LinkAwareTextView: NSTextView {
             }
         }
 
+        // Refresh embedded note previews
+        refreshInlineEmbedPreviews()
+    }
+
+    // MARK: - Embedded Notes
+
+    func inlineEmbedMatches() -> [InlineEmbedMatch] {
+        guard let regex = Self.embedRegex else { return [] }
+        let nsText = string as NSString
+        let range = NSRange(location: 0, length: nsText.length)
+
+        return regex.matches(in: string, range: range).compactMap { match in
+            guard match.numberOfRanges > 1 else { return nil }
+            let raw = nsText.substring(with: match.range(at: 1))
+            // Extract note name (before any pipe alias or heading anchor)
+            let noteName = raw
+                .components(separatedBy: "|").first?
+                .components(separatedBy: "#").first?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !noteName.isEmpty else { return nil }
+
+            let fullRange = match.range(at: 0)
+            let paragraphRange = nsText.paragraphRange(for: fullRange)
+            let id = "\(fullRange.location)-\(noteName)"
+
+            // Find the note file
+            let normalizedName = noteName.lowercased()
+            let noteURL = allFiles.first { url in
+                url.deletingPathExtension().lastPathComponent.lowercased() == normalizedName
+            }
+
+            // Get content if note exists
+            var content: String?
+            if let noteURL = noteURL {
+                content = try? String(contentsOf: noteURL, encoding: .utf8)
+            }
+
+            return InlineEmbedMatch(
+                id: id,
+                range: fullRange,
+                paragraphRange: paragraphRange,
+                noteName: noteName,
+                content: content,
+                noteURL: noteURL
+            )
+        }
+    }
+
+    func inlineEmbedPreviewHeight(for match: InlineEmbedMatch) -> CGFloat {
+        let availableWidth = max(120, bounds.width - textContainerInset.width * 2 - 20)
+        let width = min(availableWidth, 520)
+
+        // Calculate height based on content or show placeholder
+        if match.content != nil {
+            // Estimate height: title (20) + content + padding (36) + button (28)
+            let contentHeight: CGFloat = 120  // Default content height
+            return 20 + contentHeight + 36 + 28
+        } else {
+            // Unresolved: just title + padding + button
+            return 20 + 36 + 28
+        }
+    }
+
+    func refreshInlineEmbedPreviews() {
+        guard let layoutManager, let textContainer else { return }
+        layoutManager.ensureLayout(for: textContainer)
+
+        let matches = inlineEmbedMatches()
+        let activeKeys = Set(matches.map(\.id))
+
+        // Remove views for matches that no longer exist
+        for key in Array(inlineEmbedViews.keys) where !activeKeys.contains(key) {
+            guard let view = inlineEmbedViews[key] else { continue }
+            view.removeFromSuperview()
+            inlineEmbedViews.removeValue(forKey: key)
+        }
+
+        let availableWidth = max(120, bounds.width - textContainerInset.width * 2 - 20)
+        let maxWidth = min(availableWidth, 520)
+
+        for match in matches {
+            placeInlineEmbed(for: match, layoutManager: layoutManager, textContainer: textContainer, maxWidth: maxWidth)
+        }
+    }
+
+    private func placeInlineEmbed(for match: InlineEmbedMatch, layoutManager: NSLayoutManager, textContainer: NSTextContainer, maxWidth: CGFloat) {
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: match.paragraphRange, actualCharacterRange: nil)
+        var paragraphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        paragraphRect.origin.x += textContainerOrigin.x
+        paragraphRect.origin.y += textContainerOrigin.y
+
+        let isUnresolved = match.noteURL == nil
+        let height = inlineEmbedPreviewHeight(for: match)
+
+        // Position below the embed syntax line
+        let frame = NSRect(
+            x: textContainerOrigin.x + 14,
+            y: paragraphRect.maxY + 8,
+            width: maxWidth,
+            height: height
+        )
+
+        let embedView = inlineEmbedViews[match.id] ?? {
+            let view = EmbeddedNoteView()
+            view.onOpenNote = { [weak self] url in
+                self?.onOpenFile?(url)
+            }
+            addSubview(view)
+            inlineEmbedViews[match.id] = view
+            return view
+        }()
+
+        embedView.configure(
+            noteName: match.noteName,
+            content: match.content,
+            noteURL: match.noteURL,
+            isUnresolved: isUnresolved
+        )
+        embedView.frame = frame
     }
 
     func inlineImageMatches() -> [InlineImageMatch] {
@@ -1250,11 +1384,136 @@ struct InlineImageMatch {
     let source: String
 }
 
+struct InlineEmbedMatch {
+    let id: String
+    let range: NSRange
+    let paragraphRange: NSRange
+    let noteName: String
+    let content: String?
+    let noteURL: URL?
+}
+
 struct InlineYouTubeMatch {
     let id: String
     let paragraphRange: NSRange
     let videoID: String
     let sourceURL: URL
+}
+
+final class EmbeddedNoteView: NSView {
+    private let contentField = NSTextField(labelWithString: "")
+    private let titleField = NSTextField(labelWithString: "")
+    private let borderView = NSView()
+    private let openButton = NSButton()
+    private var targetURL: URL?
+    var onOpenNote: ((URL) -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    func configure(noteName: String, content: String?, noteURL: URL?, isUnresolved: Bool) {
+        targetURL = noteURL
+        titleField.stringValue = isUnresolved ? "Note not found: \(noteName)" : noteName
+
+        if isUnresolved {
+            contentField.stringValue = ""
+            contentField.isHidden = true
+            borderView.layer?.backgroundColor = NSColor(SynapseTheme.panelElevated).cgColor
+            borderView.layer?.borderColor = NSColor(SynapseTheme.error).cgColor
+        } else if let content = content {
+            contentField.stringValue = content
+            contentField.isHidden = false
+            borderView.layer?.backgroundColor = NSColor(SynapseTheme.panelElevated).cgColor
+            borderView.layer?.borderColor = NSColor(SynapseTheme.border).cgColor
+        }
+
+        openButton.isHidden = (noteURL == nil)
+    }
+
+    override func layout() {
+        super.layout()
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+
+        let padding: CGFloat = 12
+        let buttonHeight: CGFloat = 28
+
+        // Border view fills the entire frame
+        borderView.frame = bounds
+
+        // Title at top
+        titleField.frame = NSRect(
+            x: padding,
+            y: bounds.height - padding - 20,
+            width: bounds.width - padding * 2,
+            height: 20
+        )
+
+        // Content field below title
+        if !contentField.isHidden {
+            contentField.frame = NSRect(
+                x: padding,
+                y: buttonHeight + padding,
+                width: bounds.width - padding * 2,
+                height: bounds.height - buttonHeight - padding * 3 - 20
+            )
+        }
+
+        // Open button at bottom
+        openButton.frame = NSRect(
+            x: padding,
+            y: padding,
+            width: 100,
+            height: buttonHeight
+        )
+    }
+
+    @objc private func openNote() {
+        guard let url = targetURL else { return }
+        onOpenNote?(url)
+    }
+
+    private func setup() {
+        // Border view
+        borderView.wantsLayer = true
+        borderView.layer?.cornerRadius = 6
+        borderView.layer?.masksToBounds = true
+        borderView.layer?.borderWidth = 1
+        borderView.layer?.backgroundColor = NSColor(SynapseTheme.panelElevated).cgColor
+        borderView.layer?.borderColor = NSColor(SynapseTheme.border).cgColor
+        borderView.autoresizingMask = [.width, .height]
+        addSubview(borderView)
+
+        // Title field
+        titleField.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleField.textColor = NSColor(SynapseTheme.textPrimary)
+        titleField.lineBreakMode = .byTruncatingTail
+        addSubview(titleField)
+
+        // Content field
+        contentField.font = .systemFont(ofSize: 12)
+        contentField.textColor = NSColor(SynapseTheme.textSecondary)
+        contentField.lineBreakMode = .byWordWrapping
+        contentField.maximumNumberOfLines = 0
+        contentField.isHidden = true
+        addSubview(contentField)
+
+        // Open button
+        openButton.title = "Open"
+        openButton.target = self
+        openButton.action = #selector(openNote)
+        openButton.bezelStyle = .rounded
+        openButton.font = .systemFont(ofSize: 11, weight: .medium)
+        addSubview(openButton)
+    }
 }
 
 final class YouTubePreviewView: NSView {

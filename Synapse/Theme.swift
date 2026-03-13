@@ -21,6 +21,7 @@ enum SynapseTheme {
     static let accentSoft = Color(red: 0.20, green: 0.48, blue: 0.89)
     static let accentGlow = Color.clear
     static let success = Color(red: 0.37, green: 0.83, blue: 0.60)
+    static let error = Color(red: 0.95, green: 0.30, blue: 0.30)
 
     static let editorBackground = NSColor(white: 0.07, alpha: 1)
     static let editorForeground = NSColor(white: 0.92, alpha: 1)
