@@ -81,14 +81,16 @@ private struct GraphCanvas: View {
                         .foregroundStyle(nodeColor(isSelected: isSelected, isGhost: isGhost))
                         .annotation(node.id, offset: .zero) {
                             Text(node.title)
-                                .font(.system(size: 9, weight: isSelected ? .semibold : .regular))
+                                .font(.system(size: 28, weight: isSelected ? .semibold : .medium))
                                 .foregroundStyle(
-                                    isSelected ? SynapseTheme.textPrimary : SynapseTheme.textSecondary
+                                    isSelected ? Color.white : SynapseTheme.textPrimary
                                 )
                                 .lineLimit(1)
-                                // Cap label width so long filenames don't push nodes apart
-                                .frame(maxWidth: 80, alignment: .center)
-                                .padding(.top, 14)
+                                .frame(maxWidth: 260, alignment: .center)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
+                                .padding(.top, 32)
                         }
                 }
                 Series(graph.edges) { edge in

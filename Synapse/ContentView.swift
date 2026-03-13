@@ -301,17 +301,8 @@ struct ContentView: View {
 
             Spacer(minLength: 0)
 
-            if let file = appState.selectedFile {
-                HStack(spacing: 8) {
-                    Text(file.lastPathComponent)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(SynapseTheme.textSecondary)
-                        .lineLimit(1)
-
-                    if appState.isDirty {
-                        TinyBadge(text: "Unsaved", color: SynapseTheme.success)
-                    }
-                }
+            if appState.isDirty {
+                TinyBadge(text: "Unsaved", color: SynapseTheme.success)
             }
 
             // Right side: Other toolbar buttons (without back/forward)
@@ -354,7 +345,7 @@ struct ContentView: View {
                         appState.saveCurrentFile(content: appState.fileContent)
                         appState.autoPushIfEnabled()
                     }) {
-                        Image(systemName: "opticaldisc")
+                        Image(systemName: "square.and.arrow.down")
                     }
                     .buttonStyle(PrimaryChromeButtonStyle())
                     .keyboardShortcut("s", modifiers: .command)
@@ -927,30 +918,33 @@ struct SidebarPaneWrapper: View {
                 .opacity(headerTargeted ? 1 : 0)
 
             // Header — drag handle + collapse toggle
-            HStack(spacing: 6) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(SynapseTheme.textMuted)
-                    .frame(width: 14)
+            Button(action: toggleCollapsed) {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(SynapseTheme.textMuted)
+                        .frame(width: 14)
 
-                Text(pane.title)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .tracking(1.8)
-                    .foregroundStyle(SynapseTheme.textMuted)
-                    .textCase(.uppercase)
+                    Text(pane.title)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .tracking(1.8)
+                        .foregroundStyle(SynapseTheme.textMuted)
+                        .textCase(.uppercase)
 
-                Spacer()
+                    Spacer()
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(SynapseTheme.textMuted)
-                    .rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                    .animation(.easeInOut(duration: 0.18), value: isCollapsed)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(SynapseTheme.textMuted)
+                        .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                        .animation(.easeInOut(duration: 0.18), value: isCollapsed)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(SynapseTheme.panelElevated)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(SynapseTheme.panelElevated)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
             .onHover { hovering in
                 headerHovered = hovering
                 if hovering {
@@ -959,9 +953,6 @@ struct SidebarPaneWrapper: View {
                     NSCursor.pop()
                 }
             }
-            .simultaneousGesture(TapGesture().onEnded {
-                toggleCollapsed()
-            })
             .onDrag {
                 NSCursor.closedHand.push()
                 return NSItemProvider(object: pane.rawValue as NSString)
@@ -1008,6 +999,7 @@ struct SidebarPaneWrapper: View {
             .onDrop(of: [.utf8PlainText], isTargeted: $contentTargeted) { providers, _ in
                 return loadAndMove(providers: providers, before: false)
             }
+            .allowsHitTesting(!isCollapsed)
 
             // Drop indicator below — visible while hovering over content
             Rectangle()

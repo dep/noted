@@ -567,6 +567,9 @@ func styleMarkdownContent(_ content: String, fontSize: CGFloat = 12) -> NSAttrib
 extension LinkAwareTextView {
     func setPlainText(_ plain: String) {
         guard let storage = textStorage else { return }
+        // Stale ranges from a previous file would crash reapplySearchHighlights
+        lastSearchHighlightRanges = []
+        lastSearchFocusIndex = -1
         storage.beginEditing()
         storage.setAttributedString(NSAttributedString(string: plain))
         storage.endEditing()
