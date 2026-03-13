@@ -30,6 +30,7 @@ struct GraphPaneView: View {
         .onAppear { refresh() }
         .onChange(of: appState.selectedFile) { _ in refresh() }
         .onChange(of: appState.allFiles) { _ in refresh() }
+        .onChange(of: appState.lastContentChange) { _ in refresh() }
     }
 
     private func refresh() {

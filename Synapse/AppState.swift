@@ -138,6 +138,9 @@ class AppState: ObservableObject {
     @Published var allFiles: [URL] = []
     @Published var allProjectFiles: [URL] = []
     @Published var recentFiles: [URL] = []
+    
+    // Signal that fires when file content changes (for UI refresh)
+    @Published var lastContentChange: Date = .now
 
     // Tabs
     @Published var tabs: [TabItem] = []
@@ -740,6 +743,7 @@ class AppState: ObservableObject {
         fileContent = fresh
         isDirty = false
         lastObservedModificationDate = currentModificationDate
+        lastContentChange = .now
     }
 
     func pickFolder() {
@@ -1440,6 +1444,7 @@ class AppState: ObservableObject {
         try? content.write(to: url, atomically: true, encoding: .utf8)
         isDirty = false
         lastObservedModificationDate = fileModificationDate(for: url)
+        lastContentChange = .now
         stageGitChanges()
     }
 

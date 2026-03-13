@@ -101,6 +101,7 @@ struct TagsPaneView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { cachedTags = appState.allTags() }
         .onChange(of: appState.allFiles) { _ in cachedTags = appState.allTags() }
+        .onChange(of: appState.lastContentChange) { _ in cachedTags = appState.allTags() }
     }
 }
 
