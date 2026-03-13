@@ -110,8 +110,12 @@ struct EditorView: View {
                             EmbeddedNotesPanel(
                                 notes: embeddedNotes,
                                 allFiles: appState.allFiles,
-                                onOpenFile: { url in
-                                    appState.openFile(url)
+                                onOpenFile: { url, openInNewTab in
+                                    if openInNewTab {
+                                        appState.openFileInNewTab(url)
+                                    } else {
+                                        appState.openFile(url)
+                                    }
                                 }
                             )
                             .frame(width: 320)
@@ -1535,7 +1539,7 @@ struct EmbeddedNoteInfo: Identifiable, Equatable {
 struct EmbeddedNotesPanel: NSViewRepresentable {
     let notes: [EmbeddedNoteInfo]
     let allFiles: [URL]
-    let onOpenFile: (URL) -> Void
+    let onOpenFile: (URL, Bool) -> Void // (url, openInNewTab)
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -1563,8 +1567,8 @@ struct EmbeddedNotesPanel: NSViewRepresentable {
 
         for note in notes {
             let embedView = EmbeddedNoteView()
-            embedView.onOpenNote = { url in
-                onOpenFile(url)
+            embedView.onOpenNote = { url, openInNewTab in
+                onOpenFile(url, openInNewTab)
             }
             embedView.configure(
                 noteName: note.noteName,
@@ -1601,7 +1605,7 @@ final class EmbeddedNoteView: NSView {
     private let borderView = NSView()
     private let openButton = NSButton()
     private var targetURL: URL?
-    var onOpenNote: ((URL) -> Void)?
+    var onOpenNote: ((URL, Bool) -> Void)? // (url, openInNewTab)
 
     // Fixed dimensions for the right-aligned panel
     private let panelWidth: CGFloat = 280
@@ -1683,7 +1687,9 @@ final class EmbeddedNoteView: NSView {
 
     @objc private func openNote() {
         guard let url = targetURL else { return }
-        onOpenNote?(url)
+        // Check if Command key is held (for opening in new tab)
+        let openInNewTab = NSEvent.modifierFlags.contains(.command)
+        onOpenNote?(url, openInNewTab)
     }
 
     private func setup() {
