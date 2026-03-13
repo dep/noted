@@ -12,10 +12,9 @@ struct GlobalGraphView: View {
         initialModelTransform: .identity.scale(by: 1.0)
     )
     @State private var scrollMonitor: Any?
-
-    private var graph: NoteGraph {
-        appState.vaultGraph()
-    }
+    
+    // Cached graph — only recomputed when vault contents change, not on every frame
+    @State private var graph: NoteGraph = NoteGraph(nodes: [], edges: [])
 
     private var selectedID: String? {
         guard let file = appState.selectedFile else { return nil }
@@ -133,8 +132,17 @@ struct GlobalGraphView: View {
             }
         }
         .frame(minWidth: 640, minHeight: 480)
-        .onAppear { installScrollMonitor() }
+        .onAppear {
+            refresh()
+            installScrollMonitor()
+        }
+        .onChange(of: appState.allFiles) { _ in refresh() }
+        .onChange(of: appState.lastContentChange) { _ in refresh() }
         .onDisappear { removeScrollMonitor() }
+    }
+
+    private func refresh() {
+        graph = appState.vaultGraph()
     }
 
     private var emptyState: some View {

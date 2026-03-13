@@ -138,6 +138,9 @@ class AppState: ObservableObject {
     @Published var allFiles: [URL] = []
     @Published var allProjectFiles: [URL] = []
     @Published var recentFiles: [URL] = []
+    
+    // Signal that fires when file content changes (for UI refresh)
+    @Published var lastContentChange: UUID = UUID()
 
     // Tabs
     @Published var tabs: [TabItem] = []
@@ -565,16 +568,27 @@ class AppState: ObservableObject {
 
     // MARK: - Tags
 
-    private static let extractTagsRegex = try? NSRegularExpression(pattern: #"#([a-zA-Z][a-zA-Z0-9_\-\.]*)"#)
+    private static let extractTagsRegex = try? NSRegularExpression(pattern: #"#([a-zA-Z0-9][a-zA-Z0-9_\-\.]*)"#)
+    private static let urlDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
     /// Extracts all hashtags from text, normalizes to lowercase, removes duplicates
     func extractTags(from text: String) -> [String] {
         guard let regex = AppState.extractTagsRegex else { return [] }
         let nsText = text as NSString
         let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        let urlRanges = AppState.urlDetector?.matches(in: text, range: NSRange(location: 0, length: nsText.length)).map(\.range) ?? []
         var uniqueTags = Set<String>()
         return matches.compactMap { match in
             guard match.numberOfRanges > 1 else { return nil }
+            if urlRanges.contains(where: { NSLocationInRange(match.range.location, $0) }) {
+                return nil
+            }
+            if match.range.location > 0 {
+                let previousCharacter = nsText.substring(with: NSRange(location: match.range.location - 1, length: 1))
+                if previousCharacter == "/" {
+                    return nil
+                }
+            }
             let raw = nsText.substring(with: match.range(at: 1))
             let normalized = raw.lowercased()
             guard !normalized.isEmpty, normalized.rangeOfCharacter(from: .letters) != nil else { return nil }
@@ -740,6 +754,7 @@ class AppState: ObservableObject {
         fileContent = fresh
         isDirty = false
         lastObservedModificationDate = currentModificationDate
+        lastContentChange = UUID()
     }
 
     func pickFolder() {
@@ -1445,6 +1460,7 @@ class AppState: ObservableObject {
         try? content.write(to: url, atomically: true, encoding: .utf8)
         isDirty = false
         lastObservedModificationDate = fileModificationDate(for: url)
+        lastContentChange = UUID()
         stageGitChanges()
     }
 
