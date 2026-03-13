@@ -353,6 +353,148 @@ private enum MarkdownTheme {
     static let codeBackground = SynapseTheme.editorCodeBackground
 }
 
+/// Styles markdown text and returns an attributed string for display
+func styleMarkdownContent(_ content: String, fontSize: CGFloat = 12) -> NSAttributedString {
+    let storage = NSTextStorage(string: content)
+    let text = content as NSString
+    let fullRange = NSRange(location: 0, length: text.length)
+    
+    // Base attributes with smaller font for embedded display
+    let baseFont = NSFont.systemFont(ofSize: fontSize)
+    storage.addAttributes([
+        .font: baseFont,
+        .foregroundColor: SynapseTheme.editorForeground,
+    ], range: fullRange)
+    
+    // Header patterns with scaled sizes
+    let headerPatterns: [(String, NSFont)] = [
+        ("^#{6} .+$", NSFont.systemFont(ofSize: fontSize + 2, weight: .semibold)),
+        ("^#{5} .+$", NSFont.systemFont(ofSize: fontSize + 2, weight: .semibold)),
+        ("^#{4} .+$", NSFont.systemFont(ofSize: fontSize + 2, weight: .semibold)),
+        ("^### .+$",  NSFont.systemFont(ofSize: fontSize + 4, weight: .bold)),
+        ("^## .+$",   NSFont.systemFont(ofSize: fontSize + 6, weight: .bold)),
+        ("^# .+$",    NSFont.systemFont(ofSize: fontSize + 8, weight: .bold)),
+    ]
+    
+    for (pattern, font) in headerPatterns {
+        if let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) {
+            regex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+                guard let range = match?.range else { return }
+                storage.addAttributes([.font: font], range: range)
+                // Dim the hash markers
+                let hashEnd = (text.substring(with: range) as NSString).range(of: "^#{1,6} ", options: .regularExpression)
+                if hashEnd.location != NSNotFound {
+                    let absRange = NSRange(location: range.location + hashEnd.location, length: hashEnd.length)
+                    storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: absRange)
+                }
+            }
+        }
+    }
+    
+    // Bold: **text** or __text__
+    let boldPatterns = [
+        ("\\*\\*(.+?)\\*\\*", 2),
+        ("__(.+?)__", 2),
+    ]
+    for (pattern, delimLen) in boldPatterns {
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            regex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+                guard let range = match?.range else { return }
+                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: fontSize, weight: .bold), range: range)
+                // Dim delimiters
+                if range.length >= delimLen * 2 {
+                    storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: NSRange(location: range.location, length: delimLen))
+                    storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: NSRange(location: range.location + range.length - delimLen, length: delimLen))
+                }
+            }
+        }
+    }
+    
+    // Italic: *text* (but not **)
+    if let italicRegex = try? NSRegularExpression(pattern: "\\*(?!\\*)(.+?)(?<!\\*)\\*") {
+        italicRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            let desc = baseFont.fontDescriptor.withSymbolicTraits(.italic)
+            if let f = NSFont(descriptor: desc, size: fontSize) {
+                storage.addAttribute(.font, value: f, range: range)
+            }
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: NSRange(location: range.location, length: 1))
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: NSRange(location: range.location + range.length - 1, length: 1))
+        }
+    }
+    
+    // Inline code: `code`
+    if let codeRegex = try? NSRegularExpression(pattern: "`([^`\\n]+)`") {
+        codeRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            let monoFont = NSFont.monospacedSystemFont(ofSize: max(10, fontSize - 1), weight: .regular)
+            storage.addAttributes([
+                .font: monoFont,
+                .backgroundColor: MarkdownTheme.codeBackground,
+            ], range: range)
+        }
+    }
+    
+    // Code blocks: ```code```
+    if let codeBlockRegex = try? NSRegularExpression(pattern: "```[\\s\\S]*?```") {
+        codeBlockRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            let monoFont = NSFont.monospacedSystemFont(ofSize: max(10, fontSize - 1), weight: .regular)
+            storage.addAttributes([
+                .font: monoFont,
+                .backgroundColor: MarkdownTheme.codeBackground,
+                .foregroundColor: SynapseTheme.editorForeground,
+            ], range: range)
+        }
+    }
+    
+    // Blockquotes: > text
+    if let quoteRegex = try? NSRegularExpression(pattern: "^> .+$", options: [.anchorsMatchLines]) {
+        quoteRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
+        }
+    }
+    
+    // Wiki links: [[note]]
+    if let wikiRegex = try? NSRegularExpression(pattern: "\\[\\[[^\\]]+\\]\\]") {
+        wikiRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range, range.length > 4 else { return }
+            let inner = text.substring(with: NSRange(location: range.location + 2, length: range.length - 4))
+            storage.addAttributes([
+                .foregroundColor: MarkdownTheme.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .link: inner,
+            ], range: range)
+        }
+    }
+    
+    // Markdown links: [text](url)
+    if let mdLinkRegex = try? NSRegularExpression(pattern: "(?<!!)\\[([^\\]]+)\\]\\(([^)]+)\\)") {
+        mdLinkRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let match = match, match.numberOfRanges >= 3 else { return }
+            let full = match.range(at: 0)
+            let label = match.range(at: 1)
+            
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: full)
+            storage.addAttributes([
+                .foregroundColor: MarkdownTheme.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ], range: label)
+        }
+    }
+    
+    // Horizontal rules: ---
+    if let hrRegex = try? NSRegularExpression(pattern: "^---$", options: [.anchorsMatchLines]) {
+        hrRegex.enumerateMatches(in: content, range: fullRange) { match, _, _ in
+            guard let range = match?.range else { return }
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
+        }
+    }
+    
+    return NSAttributedString(attributedString: storage)
+}
+
 // MARK: - Markdown styling extension
 
 extension LinkAwareTextView {
@@ -1437,7 +1579,8 @@ final class EmbeddedNoteView: NSView {
             borderView.layer?.backgroundColor = SynapseTheme.nsPanelElevated.cgColor
             borderView.layer?.borderColor = SynapseTheme.nsError.cgColor
         } else if let content = content {
-            contentTextView.string = content
+            let styledContent = styleMarkdownContent(content, fontSize: 11)
+            contentTextView.textStorage?.setAttributedString(styledContent)
             contentScrollView.isHidden = false
             borderView.layer?.backgroundColor = SynapseTheme.nsPanelElevated.cgColor
             borderView.layer?.borderColor = SynapseTheme.nsBorder.cgColor
