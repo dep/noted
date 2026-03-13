@@ -126,6 +126,219 @@ Artifacts:
 - notarized app: `/tmp/Synapse.xcarchive/Products/Applications/Synapse.app`
 - shareable zip: `/tmp/Synapse.zip`
 
+## Features
+
+### Core Editing
+- **Live Markdown Styling** - See bold, italics, links, and code blocks styled as you type
+- **Wiki Links** - Link to other notes using `[[Note Name]]` syntax with automatic backlink tracking
+- **Embeddable Notes** - Include other notes inline using `![[Note Name]]` syntax
+- **Inline Image Previews** - View images directly in the editor
+- **Hashtag Support** - Tag notes with `#hashtag` syntax for organization
+- **Split Panes** - Work with vertical or horizontal editor splits
+- **Tab Management** - Multiple tabs with MRU (Most Recently Used) switching
+
+### Navigation & Search
+- **Quick Open** - Command palette for fast file access (`⌘P` or `⌘K`)
+- **Command Palette** - Quick access to templates and files
+- **Find in Note** - Search within current file (`⌘F`)
+- **Global Search** - Search across all notes (`⌘⇧F`)
+- **History Navigation** - Go back/forward through file history (`⌘[` / `⌘]`)
+- **Backlinks** - See which notes link to the current note
+
+### Graph Visualization
+- **Local Graph** - 1-hop view of connections from current note
+- **Global Graph** - Full vault force-directed graph with zoom and pan
+- **Ghost Nodes** - Unresolved wiki links appear as ghost nodes
+- **Interactive** - Click nodes to navigate, drag to rearrange
+
+### Terminal Integration
+- **Built-in Terminal** - ZSH terminal pane integrated in the sidebar
+- **On-boot Command** - Configure commands to run when terminal loads
+
+### Git Sync
+- **Auto-commit** - Automatically stage changes
+- **Auto-push** - Push to remote on intervals
+- **Conflict Detection** - Visual indicators for merge conflicts
+- **Sync Status** - Cloud icon shows sync state
+
+### Daily Notes & Templates
+- **Daily Notes** - Auto-create dated notes with customizable templates
+- **Templates** - Create notes from templates with variables:
+  - `{{year}}` - Current year (4 digits)
+  - `{{month}}` - Current month (01-12)
+  - `{{day}}` - Current day (01-31)
+  - `{{hour}}` - Current hour (12-hour format)
+  - `{{minute}}` - Current minute (00-59)
+  - `{{ampm}}` - AM/PM indicator
+  - `{{cursor}}` - Position cursor here after insertion
+- **Template Picker** - Choose from available templates when creating notes
+
+### Customizable Sidebar
+Drag and drop panes between left and right sidebars:
+- **Files** - File tree with folders and markdown files
+- **Tags** - Hashtag index with counts
+- **Related** - Backlinks and outgoing links
+- **Terminal** - Integrated ZSH terminal
+- **Graph** - Local graph view
+
+### Publishing
+- **Gist Publishing** - Publish notes to GitHub Gists (requires GitHub PAT)
+
+## Keyboard Shortcuts
+
+### File & Note Operations
+| Action | Shortcut |
+|--------|----------|
+| New Note | `⌘N` |
+| New Untitled Note | `⌘T` |
+| Open Folder / Vault | `⇧⌘O` |
+| Close Vault / Exit | `⇧⌘N` |
+| Save | `⌘S` |
+| Command Palette / Quick Open | `⌘K` or `⌘P` |
+
+### Search
+| Action | Shortcut |
+|--------|----------|
+| Find in Note | `⌘F` |
+| Find in All Notes | `⇧⌘F` |
+| Find Next | `⌘G` |
+| Find Previous | `⇧⌘G` |
+
+### Tabs & Navigation
+| Action | Shortcut |
+|--------|----------|
+| Close Tab | `⌘W` |
+| Close Other Tabs | `⇧⌘W` |
+| Reopen Closed Tab | `⇧⌘T` |
+| Switch to Tab 1-8 | `⌘1` - `⌘8` |
+| Switch to Last Tab | `⌘9` |
+| Go Back (History) | `⌘[` |
+| Go Forward (History) | `⌘]` |
+| Previous Tab | `⇧⌘[` |
+| Next Tab | `⇧⌘]` |
+| Cycle MRU Tabs | `⌃Tab` |
+
+### Split Panes
+| Action | Shortcut |
+|--------|----------|
+| Split Vertical | `⌘D` |
+| Split Horizontal | `⇧⌘D` |
+| Switch Pane (Vertical) | `⌘⌥←` / `⌘⌥→` |
+| Switch Pane (Horizontal) | `⌘⌥↑` / `⌘⌥↓` |
+
+### Other Shortcuts
+| Action | Shortcut |
+|--------|----------|
+| Open Global Graph | `⇧⌘G` |
+| Open Today's Note | `⌘D` |
+| Toggle Sidebar | Click sidebar icons |
+
+## Markdown Guide
+
+Synapse uses standard Markdown with extended features for knowledge management.
+
+### Basic Syntax
+
+```markdown
+# Heading 1
+## Heading 2
+### Heading 3
+
+**Bold text**
+*Italic text*
+~~Strikethrough~~
+
+- Bullet point
+- Another bullet
+  - Nested bullet
+
+1. Numbered item
+2. Another item
+
+> Blockquote
+> Multiple lines
+
+`inline code`
+
+```code block```
+
+[Link text](https://example.com)
+![Image alt text](image.png)
+```
+
+### Wiki Links
+
+Link to other notes in your vault:
+
+```markdown
+[[Note Title]]
+[[Note Title|Display Text]]  (with custom display text)
+[[Note Title#Section]]       (link to heading)
+```
+
+Wiki links are:
+- **Case-insensitive** - `[[My Note]]` matches `my note.md`
+- **Bidirectional** - See backlinks in the Related pane
+- **Clickable** - Click to navigate, Cmd+click to open in new tab
+
+### Embeddable Notes
+
+Include content from another note inline:
+
+```markdown
+![[Note Title]]
+```
+
+Embeds render the referenced note's content directly in the editor. Nested embeds are automatically converted to wiki links to prevent infinite recursion.
+
+### Hashtags
+
+Tag your notes for organization:
+
+```markdown
+#work #project-a #meeting-notes
+```
+
+Tags must:
+- Start with `#`
+- Contain at least one letter
+- Can include numbers, hyphens, underscores, and dots
+- Are normalized to lowercase
+
+### Templates
+
+Use variables in templates for dynamic content:
+
+```markdown
+# {{year}}-{{month}}-{{day}} Daily Note
+
+Time: {{hour}}:{{minute}} {{ampm}}
+
+{{cursor}}
+```
+
+### File Structure
+
+Synapse works with regular markdown files on your filesystem:
+
+```
+MyVault/
+├── notes/
+│   ├── idea.md
+│   └── project.md
+├── daily/
+│   └── 2026-03-12.md
+├── templates/
+│   ├── meeting.md
+│   └── daily.md
+└── assets/
+    └── image.png
+```
+
+- No proprietary formats - your data is always accessible
+- Git-friendly - version control your entire vault
+- Portable - open any folder containing markdown files
+
 ## Notes
 
 - The project uses `SwiftTerm` via Swift Package Manager.
