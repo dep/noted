@@ -25,8 +25,8 @@ final class DailyNotesOpenOnStartupTests: XCTestCase {
 
     // MARK: - Default State
 
-    func test_initialState_dailyNotesOpenOnStartup_defaultsToTrue() {
-        XCTAssertTrue(sut.dailyNotesOpenOnStartup, "dailyNotesOpenOnStartup should default to true")
+    func test_initialState_dailyNotesOpenOnStartup_defaultsToFalse() {
+        XCTAssertFalse(sut.dailyNotesOpenOnStartup, "dailyNotesOpenOnStartup should default to false")
     }
 
     // MARK: - Setting Behavior
@@ -69,7 +69,7 @@ final class DailyNotesOpenOnStartupTests: XCTestCase {
 
     // MARK: - Load with Missing Value
 
-    func test_load_missingDailyNotesOpenOnStartup_defaultsToTrue() throws {
+    func test_load_missingDailyNotesOpenOnStartup_defaultsToFalse() throws {
         // Write config without dailyNotesOpenOnStartup
         let config: [String: Any] = [
             "onBootCommand": "",
@@ -84,7 +84,7 @@ final class DailyNotesOpenOnStartupTests: XCTestCase {
         try data.write(to: URL(fileURLWithPath: configFilePath))
 
         let newManager = SettingsManager(configPath: configFilePath)
-        XCTAssertTrue(newManager.dailyNotesOpenOnStartup, "Should default to true when missing from config")
+        XCTAssertFalse(newManager.dailyNotesOpenOnStartup, "Should default to false when missing from config")
     }
 
     // MARK: - Save Notification
