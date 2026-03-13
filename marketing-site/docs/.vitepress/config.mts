@@ -21,6 +21,12 @@ export default defineConfig({
           { text: 'Settings', link: '/#settings' },
           { text: 'Keyboard Shortcuts', link: '/#keyboard-shortcuts' }
         ]
+      },
+      {
+        text: 'Documentation',
+        items: [
+          { text: 'Markdown Guide', link: '/markdown' }
+        ]
       }
     ],
 

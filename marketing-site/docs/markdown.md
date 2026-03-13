@@ -249,19 +249,19 @@ Use these variables in your templates:
 
 | Variable | Output | Example |
 |----------|--------|---------|
-| `{{year}}` | 4-digit year | 2026 |
-| `{{month}}` | 2-digit month | 03 |
-| `{{day}}` | 2-digit day | 12 |
-| `{{hour}}` | 12-hour format hour | 09 |
-| `{{minute}}` | 2-digit minute | 45 |
-| `{{ampm}}` | AM or PM | AM |
-| `{{cursor}}` | Cursor position | (removed after placement) |
+| <code v-pre>{{year}}</code> | 4-digit year | 2026 |
+| <code v-pre>{{month}}</code> | 2-digit month | 03 |
+| <code v-pre>{{day}}</code> | 2-digit day | 12 |
+| <code v-pre>{{hour}}</code> | 12-hour format hour | 09 |
+| <code v-pre>{{minute}}</code> | 2-digit minute | 45 |
+| <code v-pre>{{ampm}}</code> | AM or PM | AM |
+| <code v-pre>{{cursor}}</code> | Cursor position | (removed after placement) |
 
 ### Example Templates
 
 **Daily Note Template:**
 
-```markdown
+```markdown v-pre
 # {{year}}-{{month}}-{{day}} Daily Note
 
 ## Morning
@@ -276,7 +276,7 @@ Use these variables in your templates:
 
 **Meeting Template:**
 
-```markdown
+```markdown v-pre
 # Meeting: {{year}}-{{month}}-{{day}}
 
 **Time:** {{hour}}:{{minute}} {{ampm}}
@@ -295,7 +295,7 @@ Use these variables in your templates:
 
 **Project Template:**
 
-```markdown
+```markdown v-pre
 # {{year}}-{{month}}-{{day}} - New Project
 
 ## Overview
