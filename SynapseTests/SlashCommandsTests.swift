@@ -81,6 +81,18 @@ final class SlashCommandsTests: XCTestCase {
         XCTAssertEqual(textView.string, "- [ ] ")
     }
 
+    func test_slashCommandContext_worksAfterEmojiOnPreviousLine() {
+        // Emoji are multi-byte in UTF-16; lineStart must be in NSString (UTF-16) units
+        let text = "🌨️ weather\n/time"
+        let nsText = text as NSString
+
+        let context = slashCommandContext(in: text, cursor: nsText.length)
+
+        XCTAssertNotNil(context)
+        XCTAssertEqual(context?.query, "time")
+        XCTAssertEqual(nsText.substring(with: context!.range), "/time")
+    }
+
     func test_expandSlashCommandIfNeeded_expandsOnSecondLine() {
         let textView = LinkAwareTextView()
         textView.slashCommandNowProvider = { Date(timeIntervalSince1970: 1_773_498_840) }
