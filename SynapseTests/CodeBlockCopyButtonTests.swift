@@ -130,6 +130,19 @@ final class CodeBlockCopyButtonTests: XCTestCase {
         let buttons = textView.codeBlockCopyButtons
         XCTAssertEqual(buttons.count, 1, "Should create one copy button per code block")
     }
+
+    func test_usesDedicatedCopyButtonSubclass() {
+        let text = """
+        ```
+        Code content here
+        ```
+        """
+
+        textView.setPlainText(text)
+        textView.refreshCodeBlockCopyButtons()
+
+        XCTAssertTrue(textView.codeBlockCopyButtons.first?.value is CodeBlockCopyButton)
+    }
     
     func test_createsMultipleCopyButtons() {
         let text = """
