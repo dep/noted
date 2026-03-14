@@ -4,6 +4,8 @@ A minimal macOS markdown editor with a built-in terminal, wiki links, quick open
 
 <img width="1582" height="1035" alt="image" src="https://github.com/user-attachments/assets/f409440d-0d11-49c2-bb38-04ba16ce61d6" />
 
+Docs: https://synapse-delta-nine.vercel.app/
+
 ## Requirements
 
 - macOS 14+
