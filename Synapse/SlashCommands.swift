@@ -32,34 +32,35 @@ struct SlashCommandResolverContext {
 func slashCommandContext(in text: String, cursor: Int) -> SlashCommandContext? {
     let nsText = text as NSString
     let clampedCursor = min(max(0, cursor), nsText.length)
+    guard clampedCursor > 0 else { return nil }
 
-    // Find the start of the current line in UTF-16 units (NSString domain).
-    // Search backward from cursor for a newline character.
-    var lineStart = 0
-    if clampedCursor > 0 {
-        let searchRange = NSRange(location: 0, length: clampedCursor)
-        let newlineSet = CharacterSet.newlines
-        // Walk backwards from cursor to find last newline before cursor
-        var i = clampedCursor - 1
-        while i >= 0 {
-            let charRange = NSRange(location: i, length: 1)
-            let ch = nsText.substring(with: charRange)
-            if ch.unicodeScalars.contains(where: { newlineSet.contains($0) }) {
-                lineStart = i + 1
-                break
-            }
-            i -= 1
+    // Walk backward from cursor in UTF-16 units to find the token start.
+    // Stop at any whitespace or the beginning of the string.
+    let whitespaceAndNewlines = CharacterSet.whitespacesAndNewlines
+    var tokenStart = clampedCursor
+    var i = clampedCursor - 1
+    while i >= 0 {
+        let ch = nsText.substring(with: NSRange(location: i, length: 1))
+        if ch.unicodeScalars.contains(where: { whitespaceAndNewlines.contains($0) }) {
+            break
         }
-        _ = searchRange // silence warning
+        tokenStart = i
+        i -= 1
     }
 
-    let tokenRange = NSRange(location: lineStart, length: clampedCursor - lineStart)
+    let tokenRange = NSRange(location: tokenStart, length: clampedCursor - tokenStart)
     guard tokenRange.length > 0 else { return nil }
 
     let token = nsText.substring(with: tokenRange)
-    guard token.hasPrefix("/") else { return nil }
-    guard !token.contains(" "), !token.contains("\t") else { return nil }
-    guard token.range(of: #"^/[A-Za-z]*$"#, options: .regularExpression) != nil else { return nil }
+
+    // Must start with '/' and contain only letters after it.
+    guard token.range(of: #"^/[A-Za-z]+$"#, options: .regularExpression) != nil else { return nil }
+
+    // The character immediately before the '/' must be whitespace/newline or start-of-line.
+    if tokenStart > 0 {
+        let preceding = nsText.substring(with: NSRange(location: tokenStart - 1, length: 1))
+        guard preceding.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) }) else { return nil }
+    }
 
     return SlashCommandContext(range: tokenRange, query: String(token.dropFirst()).lowercased())
 }

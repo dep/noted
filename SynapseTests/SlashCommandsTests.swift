@@ -11,8 +11,19 @@ final class SlashCommandsTests: XCTestCase {
         XCTAssertEqual(context, SlashCommandContext(range: NSRange(location: 6, length: 5), query: "time"))
     }
 
-    func test_slashCommandContext_ignoresSlashMidLine() {
-        let text = "Title /time"
+    func test_slashCommandContext_detectsSlashAfterSpace() {
+        let text = "# /date"
+
+        let context = slashCommandContext(in: text, cursor: (text as NSString).length)
+
+        XCTAssertNotNil(context)
+        XCTAssertEqual(context?.query, "date")
+        XCTAssertEqual((text as NSString).substring(with: context!.range), "/date")
+    }
+
+    func test_slashCommandContext_ignoresSlashWithNoLeadingSpace() {
+        // "foo/time" — slash directly after non-whitespace, not a command
+        let text = "foo/time"
 
         let context = slashCommandContext(in: text, cursor: (text as NSString).length)
 
@@ -60,14 +71,26 @@ final class SlashCommandsTests: XCTestCase {
         XCTAssertEqual(textView.string, "/ti")  // unchanged
     }
 
-    func test_expandSlashCommandIfNeeded_doesNotExpandSlashCommandMidLine() {
+    func test_expandSlashCommandIfNeeded_expandsSlashAfterSpace() {
         let textView = LinkAwareTextView()
+        textView.slashCommandNowProvider = { Date(timeIntervalSince1970: 1_773_498_840) }
+        textView.slashCommandTimeZone = TimeZone(secondsFromGMT: 0)!
         textView.string = "some text /time"
         textView.setSelectedRange(NSRange(location: 15, length: 0))
 
         textView.expandSlashCommandIfNeeded()
 
-        XCTAssertEqual(textView.string, "some text /time")  // unchanged
+        XCTAssertEqual(textView.string, "some text 2:34 pm")
+    }
+
+    func test_expandSlashCommandIfNeeded_doesNotExpandSlashWithNoLeadingSpace() {
+        let textView = LinkAwareTextView()
+        textView.string = "foo/time"
+        textView.setSelectedRange(NSRange(location: 8, length: 0))
+
+        textView.expandSlashCommandIfNeeded()
+
+        XCTAssertEqual(textView.string, "foo/time")  // unchanged
     }
 
     func test_expandSlashCommandIfNeeded_expandsTodoCommand() {
