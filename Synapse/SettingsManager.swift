@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import Yams
 
 enum SidebarPane: String, Codable, CaseIterable, Identifiable {
     case files = "files"
@@ -23,6 +24,9 @@ enum SidebarPane: String, Codable, CaseIterable, Identifiable {
 
 /// Manages application settings with persistence to a local JSON config file
 class SettingsManager: ObservableObject {
+    private static let vaultSettingsFilename = "settings.yml"
+    private static let globalSettingsFilename = "settings.yml"
+
     @Published var onBootCommand: String {
         didSet { save() }
     }
@@ -189,12 +193,6 @@ class SettingsManager: ObservableObject {
         var dailyNotesOpenOnStartup: Bool?
         var autoSave: Bool
         var autoPush: Bool
-        var leftSidebarPanes: [SidebarPane]?
-        var rightSidebarPanes: [SidebarPane]?
-        var leftPaneHeights: [String: CGFloat]?
-        var rightPaneHeights: [String: CGFloat]?
-        var collapsedPanes: [String]?
-        var fileTreeMode: String?
         var pinnedItems: [PinnedItem]?
 
         init(
@@ -208,12 +206,6 @@ class SettingsManager: ObservableObject {
             dailyNotesOpenOnStartup: Bool?,
             autoSave: Bool,
             autoPush: Bool,
-            leftSidebarPanes: [SidebarPane]?,
-            rightSidebarPanes: [SidebarPane]?,
-            leftPaneHeights: [String: CGFloat]?,
-            rightPaneHeights: [String: CGFloat]?,
-            collapsedPanes: [String]?,
-            fileTreeMode: String?,
             pinnedItems: [PinnedItem]?
         ) {
             self.onBootCommand = onBootCommand
@@ -226,12 +218,6 @@ class SettingsManager: ObservableObject {
             self.dailyNotesOpenOnStartup = dailyNotesOpenOnStartup
             self.autoSave = autoSave
             self.autoPush = autoPush
-            self.leftSidebarPanes = leftSidebarPanes
-            self.rightSidebarPanes = rightSidebarPanes
-            self.leftPaneHeights = leftPaneHeights
-            self.rightPaneHeights = rightPaneHeights
-            self.collapsedPanes = collapsedPanes
-            self.fileTreeMode = fileTreeMode
             self.pinnedItems = pinnedItems
         }
 
@@ -247,22 +233,36 @@ class SettingsManager: ObservableObject {
             dailyNotesOpenOnStartup = try container.decodeIfPresent(Bool.self, forKey: .dailyNotesOpenOnStartup)
             autoSave = try container.decodeIfPresent(Bool.self, forKey: .autoSave) ?? false
             autoPush = try container.decodeIfPresent(Bool.self, forKey: .autoPush) ?? false
-            leftSidebarPanes = try container.decodeIfPresent([SidebarPane].self, forKey: .leftSidebarPanes)
-            rightSidebarPanes = try container.decodeIfPresent([SidebarPane].self, forKey: .rightSidebarPanes)
-            leftPaneHeights = try container.decodeIfPresent([String: CGFloat].self, forKey: .leftPaneHeights)
-            rightPaneHeights = try container.decodeIfPresent([String: CGFloat].self, forKey: .rightPaneHeights)
-            collapsedPanes = try container.decodeIfPresent([String].self, forKey: .collapsedPanes)
-            fileTreeMode = try container.decodeIfPresent(String.self, forKey: .fileTreeMode)
             pinnedItems = try container.decodeIfPresent([PinnedItem].self, forKey: .pinnedItems)
         }
     }
 
-    /// Config for global/sensitive settings only
+    /// Config for machine-local settings only
     private struct GlobalConfig: Codable {
         var githubPAT: String?
+        var leftSidebarPanes: [SidebarPane]?
+        var rightSidebarPanes: [SidebarPane]?
+        var leftPaneHeights: [String: CGFloat]?
+        var rightPaneHeights: [String: CGFloat]?
+        var collapsedPanes: [String]?
+        var fileTreeMode: String?
 
-        init(githubPAT: String?) {
+        init(
+            githubPAT: String?,
+            leftSidebarPanes: [SidebarPane]?,
+            rightSidebarPanes: [SidebarPane]?,
+            leftPaneHeights: [String: CGFloat]?,
+            rightPaneHeights: [String: CGFloat]?,
+            collapsedPanes: [String]?,
+            fileTreeMode: String?
+        ) {
             self.githubPAT = githubPAT
+            self.leftSidebarPanes = leftSidebarPanes
+            self.rightSidebarPanes = rightSidebarPanes
+            self.leftPaneHeights = leftPaneHeights
+            self.rightPaneHeights = rightPaneHeights
+            self.collapsedPanes = collapsedPanes
+            self.fileTreeMode = fileTreeMode
         }
     }
 
@@ -271,7 +271,7 @@ class SettingsManager: ObservableObject {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let configDir = appSupport.appendingPathComponent("Synapse")
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
-        let configPath = configDir.appendingPathComponent("settings.json").path
+        let configPath = configDir.appendingPathComponent(Self.globalSettingsFilename).path
         self.init(configPath: configPath)
     }
 
@@ -323,7 +323,7 @@ class SettingsManager: ObservableObject {
         }
     }
 
-    /// Initialize with vault root - stores settings in .noted/settings.json
+    /// Initialize with vault root - stores settings in .noted/settings.yml
     /// - Parameters:
     ///   - vaultRoot: The vault root URL (nil means use defaults)
     ///   - globalConfigPath: Optional path for global/sensitive settings (defaults to Application Support)
@@ -331,7 +331,7 @@ class SettingsManager: ObservableObject {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let configDir = appSupport.appendingPathComponent("Synapse")
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
-        let defaultGlobalPath = configDir.appendingPathComponent("settings.json").path
+        let defaultGlobalPath = configDir.appendingPathComponent(Self.globalSettingsFilename).path
 
         self.init(
             vaultRoot: vaultRoot,
@@ -341,13 +341,13 @@ class SettingsManager: ObservableObject {
 
     /// Full initializer with vault root and global config path
     init(vaultRoot: URL?, globalConfigPath: String) {
-        self.configPath = vaultRoot?.appendingPathComponent(".noted/settings.json").path ?? globalConfigPath
+        self.configPath = vaultRoot?.appendingPathComponent(".noted/\(Self.vaultSettingsFilename)").path ?? globalConfigPath
         self.vaultRootURL = vaultRoot
         self.globalConfigPath = globalConfigPath
 
         if let vaultRoot = vaultRoot {
             // Vault mode: load from both vault config and global config
-            let vaultConfigPath = vaultRoot.appendingPathComponent(".noted/settings.json").path
+            let vaultConfigPath = vaultRoot.appendingPathComponent(".noted/\(Self.vaultSettingsFilename)").path
 
             // Create .noted folder and settings file if they don't exist
             let notedDir = vaultRoot.appendingPathComponent(".noted")
@@ -367,12 +367,6 @@ class SettingsManager: ObservableObject {
                 self.dailyNotesOpenOnStartup = vaultConfig.dailyNotesOpenOnStartup ?? false
                 self.autoSave = vaultConfig.autoSave
                 self.autoPush = vaultConfig.autoPush
-                self.leftSidebarPanes = vaultConfig.leftSidebarPanes ?? [.files, .tags, .links]
-                self.rightSidebarPanes = vaultConfig.rightSidebarPanes ?? [.terminal]
-                self.leftPaneHeights = vaultConfig.leftPaneHeights ?? [:]
-                self.rightPaneHeights = vaultConfig.rightPaneHeights ?? [:]
-                self.collapsedPanes = Set(vaultConfig.collapsedPanes ?? [])
-                self.fileTreeMode = FileTreeMode(rawValue: vaultConfig.fileTreeMode ?? "") ?? .folder
                 self.pinnedItems = vaultConfig.pinnedItems ?? []
             } else {
                 // No vault config exists yet - use defaults
@@ -386,18 +380,25 @@ class SettingsManager: ObservableObject {
                 self.dailyNotesOpenOnStartup = false
                 self.autoSave = false
                 self.autoPush = false
-                self.leftSidebarPanes = [.files, .tags, .links]
-                self.rightSidebarPanes = [.terminal]
-                self.leftPaneHeights = [:]
-                self.rightPaneHeights = [:]
-                self.collapsedPanes = []
-                self.fileTreeMode = .folder
                 self.pinnedItems = []
             }
 
-            // Load global/sensitive settings
+            self.leftSidebarPanes = [.files, .tags, .links]
+            self.rightSidebarPanes = [.terminal]
+            self.leftPaneHeights = [:]
+            self.rightPaneHeights = [:]
+            self.collapsedPanes = []
+            self.fileTreeMode = .folder
+
+            // Load global/machine-local settings
             if let globalConfig = Self.loadGlobalConfig(from: globalConfigPath) {
                 self.githubPAT = globalConfig.githubPAT ?? ""
+                self.leftSidebarPanes = globalConfig.leftSidebarPanes ?? self.leftSidebarPanes
+                self.rightSidebarPanes = globalConfig.rightSidebarPanes ?? self.rightSidebarPanes
+                self.leftPaneHeights = globalConfig.leftPaneHeights ?? self.leftPaneHeights
+                self.rightPaneHeights = globalConfig.rightPaneHeights ?? self.rightPaneHeights
+                self.collapsedPanes = Set(globalConfig.collapsedPanes ?? Array(self.collapsedPanes))
+                self.fileTreeMode = FileTreeMode(rawValue: globalConfig.fileTreeMode ?? "") ?? self.fileTreeMode
             } else {
                 self.githubPAT = ""
             }
@@ -531,13 +532,14 @@ class SettingsManager: ObservableObject {
                 fileTreeMode: fileTreeMode.rawValue,
                 pinnedItems: pinnedItems.isEmpty ? nil : pinnedItems
             )
-            guard let data = try? JSONEncoder().encode(config) else { return }
+            let encoder = Self.makePrettyJSONEncoder()
+            guard let data = try? encoder.encode(config) else { return }
             let configURL = URL(fileURLWithPath: configPath)
             let parentDir = configURL.deletingLastPathComponent()
             try? FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
             try? data.write(to: configURL)
         } else if let vaultRootURL = vaultRootURL {
-            // Vault mode: save vault settings to .noted/settings.json
+            // Vault mode: save vault settings to .noted/settings.yml
             let vaultConfig = VaultConfig(
                 onBootCommand: onBootCommand,
                 fileExtensionFilter: fileExtensionFilter,
@@ -549,31 +551,33 @@ class SettingsManager: ObservableObject {
                 dailyNotesOpenOnStartup: dailyNotesOpenOnStartup,
                 autoSave: autoSave,
                 autoPush: autoPush,
-                leftSidebarPanes: leftSidebarPanes,
-                rightSidebarPanes: rightSidebarPanes,
-                leftPaneHeights: leftPaneHeights,
-                rightPaneHeights: rightPaneHeights,
-                collapsedPanes: Array(collapsedPanes),
-                fileTreeMode: fileTreeMode.rawValue,
                 pinnedItems: pinnedItems.isEmpty ? nil : pinnedItems
             )
 
-            // Save vault-specific settings to .noted/settings.json
+            // Save vault-specific settings to .noted/settings.yml
             let notedDir = vaultRootURL.appendingPathComponent(".noted")
             try? FileManager.default.createDirectory(at: notedDir, withIntermediateDirectories: true)
-            let vaultConfigPath = notedDir.appendingPathComponent("settings.json")
+            let vaultConfigPath = notedDir.appendingPathComponent(Self.vaultSettingsFilename)
 
-            guard let vaultData = try? JSONEncoder().encode(vaultConfig) else { return }
-            try? vaultData.write(to: vaultConfigPath)
+            guard let vaultYAML = try? YAMLEncoder().encode(vaultConfig) else { return }
+            try? vaultYAML.write(to: vaultConfigPath, atomically: true, encoding: .utf8)
 
-            // Save sensitive settings to global config
+            // Save machine-local settings to global config
             if let globalConfigPath = globalConfigPath {
-                let globalConfig = GlobalConfig(githubPAT: githubPAT.isEmpty ? nil : githubPAT)
-                guard let globalData = try? JSONEncoder().encode(globalConfig) else { return }
+                let globalConfig = GlobalConfig(
+                    githubPAT: githubPAT.isEmpty ? nil : githubPAT,
+                    leftSidebarPanes: leftSidebarPanes,
+                    rightSidebarPanes: rightSidebarPanes,
+                    leftPaneHeights: leftPaneHeights,
+                    rightPaneHeights: rightPaneHeights,
+                    collapsedPanes: Array(collapsedPanes),
+                    fileTreeMode: fileTreeMode.rawValue
+                )
+                guard let globalYAML = try? YAMLEncoder().encode(globalConfig) else { return }
                 let globalConfigURL = URL(fileURLWithPath: globalConfigPath)
                 let globalParentDir = globalConfigURL.deletingLastPathComponent()
                 try? FileManager.default.createDirectory(at: globalParentDir, withIntermediateDirectories: true)
-                try? globalData.write(to: globalConfigURL)
+                try? globalYAML.write(to: globalConfigURL, atomically: true, encoding: .utf8)
             }
         }
         // If no vault and not legacy mode, don't save anything (use defaults in memory)
@@ -592,11 +596,11 @@ class SettingsManager: ObservableObject {
     /// Load vault-specific config from disk
     private static func loadVaultConfig(from path: String) -> VaultConfig? {
         guard FileManager.default.fileExists(atPath: path),
-              let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+              let yaml = try? String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8) else {
             return nil
         }
 
-        return try? JSONDecoder().decode(VaultConfig.self, from: data)
+        return try? YAMLDecoder().decode(VaultConfig.self, from: yaml)
     }
 
     /// Load global/sensitive config from disk
@@ -606,6 +610,18 @@ class SettingsManager: ObservableObject {
             return nil
         }
 
+        if let yaml = String(data: data, encoding: .utf8),
+           let config = try? YAMLDecoder().decode(GlobalConfig.self, from: yaml) {
+            return config
+        }
+
         return try? JSONDecoder().decode(GlobalConfig.self, from: data)
+    }
+
+    /// Create a JSON encoder with pretty printing enabled
+    private static func makePrettyJSONEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
     }
 }

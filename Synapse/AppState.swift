@@ -198,7 +198,7 @@ class AppState: ObservableObject {
     @AppStorage("sortAscending") var sortAscending: Bool = true
 
     // Settings
-    var settings: SettingsManager
+    @Published var settings: SettingsManager
     let gistPublisher = GistPublisher()
 
     /// Replace settings for testing purposes only
