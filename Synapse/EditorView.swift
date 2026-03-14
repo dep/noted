@@ -761,6 +761,7 @@ extension LinkAwareTextView {
         DispatchQueue.main.async { [weak self] in
             self?.refreshInlineImagePreviews()
             self?.refreshCollapsibleToggles()
+            self?.refreshCodeBlockCopyButtons()
         }
     }
 
@@ -930,6 +931,8 @@ extension LinkAwareTextView {
             inlineVideoViews[key]?.removeFromSuperview()
             inlineVideoViews.removeValue(forKey: key)
         }
+        
+        clearCodeBlockCopyButtons()
     }
 }
 
@@ -1140,6 +1143,7 @@ class LinkAwareTextView: NSTextView {
         DispatchQueue.main.async { [weak self] in
             self?.refreshInlineImagePreviews()
             self?.refreshCollapsibleToggles()
+            self?.refreshCodeBlockCopyButtons()
         }
     }
 
@@ -2596,5 +2600,214 @@ extension CompletionViewController: NSSearchFieldDelegate, NSControlTextEditingD
         default:
             return false
         }
+    }
+}
+
+// MARK: - Code Block Copy Button
+
+/// Represents a detected code block in markdown
+struct CodeBlockMatch: Equatable {
+    let id: String
+    let range: NSRange
+    let content: String
+    let language: String?
+    
+    static func == (lhs: CodeBlockMatch, rhs: CodeBlockMatch) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.range == rhs.range &&
+        lhs.content == rhs.content &&
+        lhs.language == rhs.language
+    }
+}
+
+extension LinkAwareTextView {
+    
+    /// Dictionary to track code block copy buttons keyed by their ID
+    private var codeBlockCopyButtonsKey: String { "codeBlockCopyButtons" }
+    
+    var codeBlockCopyButtons: [String: NSButton] {
+        get {
+            (objc_getAssociatedObject(self, codeBlockCopyButtonsKey) as? [String: NSButton]) ?? [:]
+        }
+        set {
+            objc_setAssociatedObject(self, codeBlockCopyButtonsKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+    }
+    
+    /// Regex pattern to detect code blocks: ```optional_language\ncode\n```
+    /// Only matches opening ``` at the start of a line or string
+    private static let codeBlockRegex = try? NSRegularExpression(
+        pattern: "^```([a-zA-Z0-9+-]*)",
+        options: [.anchorsMatchLines]
+    )
+    
+    /// Find all code blocks in the current text
+    func codeBlockMatches() -> [CodeBlockMatch] {
+        guard let regex = Self.codeBlockRegex else { return [] }
+        let nsText = string as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        
+        var matches: [CodeBlockMatch] = []
+        let text = string
+        
+        // Find all opening ```
+        let openingMatches = regex.matches(in: text, options: [], range: fullRange)
+        
+        for openingMatch in openingMatches {
+            let openingRange = openingMatch.range(at: 0)
+            let languageRange = openingMatch.range(at: 1)
+            
+            // Find the closing ```
+            let searchStart = openingRange.location + openingRange.length
+            guard searchStart < nsText.length else { continue }
+            
+            // Look for closing ``` at the start of a line after the opening
+            let remainingRange = NSRange(location: searchStart, length: nsText.length - searchStart)
+            guard let closingRange = self.findClosingBackticks(in: nsText, range: remainingRange) else { continue }
+            
+            // Extract content between opening and closing
+            let contentStart = searchStart
+            let contentLength = closingRange.location - contentStart
+            guard contentLength >= 0 else { continue }
+            
+            let contentRange = NSRange(location: contentStart, length: contentLength)
+            var content = nsText.substring(with: contentRange)
+            
+            // Trim leading newline if present (the newline after opening ```)
+            if content.hasPrefix("\n") {
+                content = String(content.dropFirst())
+            }
+            // Trim trailing newline if present (the newline before closing ```)
+            if content.hasSuffix("\n") {
+                content = String(content.dropLast())
+            }
+            
+            // Trim trailing whitespace on the opening line (language identifier + whitespace)
+            content = content.trimmingCharacters(in: .whitespaces)
+            
+            let language = languageRange.length > 0 ? nsText.substring(with: languageRange) : nil
+            let fullRange = NSRange(location: openingRange.location, length: closingRange.location + closingRange.length - openingRange.location)
+            let id = "\(openingRange.location)-\(openingRange.length)"
+            
+            matches.append(CodeBlockMatch(
+                id: id,
+                range: fullRange,
+                content: content,
+                language: language
+            ))
+        }
+        
+        return matches
+    }
+    
+    /// Find the closing ``` in the text within a given range
+    private func findClosingBackticks(in nsText: NSString, range: NSRange) -> NSRange? {
+        // Look for ``` at the start of a line within the given range
+        guard let regex = try? NSRegularExpression(pattern: "^```", options: [.anchorsMatchLines]) else {
+            return nil
+        }
+        
+        let substring = nsText.substring(with: range)
+        let matches = regex.matches(in: substring, options: [], range: NSRange(location: 0, length: (substring as NSString).length))
+        
+        // Return the first match (the closing ```)
+        guard let firstMatch = matches.first else { return nil }
+        
+        // Adjust the range to be relative to the original text
+        return NSRange(location: range.location + firstMatch.range.location, length: firstMatch.range.length)
+    }
+    
+    /// Create and position copy buttons for all code blocks
+    func refreshCodeBlockCopyButtons() {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer else { return }
+        
+        layoutManager.ensureLayout(for: textContainer)
+        
+        let matches = codeBlockMatches()
+        let activeKeys = Set(matches.map(\.id))
+        
+        // Remove stale buttons
+        for key in Array(codeBlockCopyButtons.keys) where !activeKeys.contains(key) {
+            codeBlockCopyButtons[key]?.removeFromSuperview()
+            codeBlockCopyButtons.removeValue(forKey: key)
+        }
+        
+        let buttonSize: CGFloat = 24
+        let buttonMargin: CGFloat = 8
+        
+        for match in matches {
+            // Get the rect of the code block
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: match.range, actualCharacterRange: nil)
+            var codeBlockRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            codeBlockRect.origin.x += textContainerOrigin.x
+            codeBlockRect.origin.y += textContainerOrigin.y
+            
+            // Position button at top-right corner
+            let buttonX = codeBlockRect.maxX - buttonSize - buttonMargin
+            let buttonY = codeBlockRect.minY + buttonMargin
+            
+            let button: NSButton
+            if let existing = codeBlockCopyButtons[match.id] {
+                button = existing
+            } else {
+                button = createCopyButton(for: match)
+                addSubview(button)
+                codeBlockCopyButtons[match.id] = button
+            }
+            
+            button.frame = NSRect(x: buttonX, y: buttonY, width: buttonSize, height: buttonSize)
+        }
+    }
+    
+    /// Create a copy button for a specific code block
+    private func createCopyButton(for match: CodeBlockMatch) -> NSButton {
+        let button = NSButton(frame: .zero)
+        button.bezelStyle = .inline
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 4
+        button.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.8).cgColor
+        
+        // Use copy icon
+        if let image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy code") {
+            button.image = image
+        }
+        button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = NSColor.secondaryLabelColor
+        
+        button.toolTip = "Copy code"
+        
+        // Store the content to copy
+        button.identifier = NSUserInterfaceItemIdentifier(match.id)
+        objc_setAssociatedObject(button, "codeContent", match.content, .OBJC_ASSOCIATION_COPY_NONATOMIC)
+        
+        button.target = self
+        button.action = #selector(codeBlockCopyButtonClicked(_:))
+        
+        return button
+    }
+    
+    /// Handle copy button click
+    @objc private func codeBlockCopyButtonClicked(_ sender: NSButton) {
+        guard let content = objc_getAssociatedObject(sender, "codeContent") as? String else { return }
+        
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(content, forType: .string)
+        
+        // Provide visual feedback
+        sender.contentTintColor = NSColor.systemGreen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak sender] in
+            sender?.contentTintColor = NSColor.secondaryLabelColor
+        }
+    }
+    
+    /// Remove all code block copy buttons
+    func clearCodeBlockCopyButtons() {
+        for (_, button) in codeBlockCopyButtons {
+            button.removeFromSuperview()
+        }
+        codeBlockCopyButtons.removeAll()
     }
 }
