@@ -13,6 +13,9 @@ packages:
   Grape:
     url: https://github.com/SwiftGraphs/Grape
     from: 1.1.0
+  Yams:
+    url: https://github.com/jpsim/Yams
+    from: 6.2.1
 
 targets:
   Synapse:
@@ -37,6 +40,7 @@ targets:
     dependencies:
       - package: SwiftTerm
       - package: Grape
+      - package: Yams
     entitlements:
       path: Synapse/Synapse.entitlements
       properties:

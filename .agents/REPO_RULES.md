@@ -67,7 +67,7 @@ spctl --assess --type execute --verbose=4 "/tmp/Synapse.xcarchive/Products/Appli
 | `SearchView.swift` | In-file search (CMD-F) and all-files search (CMD-Shift-F). |
 | `TerminalPaneView.swift` | Embedded terminal pane (right sidebar). |
 | `GitService.swift` | Shell-out wrapper around git CLI. |
-| `SettingsManager.swift` | JSON-persisted settings (auto-save, auto-push, file extension filter, on-boot command). Config file at `~/Library/Application Support/Synapse/settings.json`. |
+| `SettingsManager.swift` | JSON/YAML-persisted settings (auto-save, auto-push, file extension filter, on-boot command). Machine-local config file at `~/Library/Application Support/Synapse/settings.yml`; vault config file at `.noted/settings.yml`. |
 | `Theme.swift` | All colors, button styles, and shared UI components (`SynapseTheme`, `ChromeButtonStyle`, `PrimaryChromeButtonStyle`, `TinyBadge`, `PanelSurface`). |
 | `SynapseApp.swift` | App entry point. |
 

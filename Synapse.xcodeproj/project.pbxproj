@@ -40,6 +40,7 @@
 		70792E277639E834624DC380 /* SplitPaneKeyboardAndCursorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B5194AC3C7EE4980499F00 /* SplitPaneKeyboardAndCursorTests.swift */; };
 		716F196A70B019DB1125E38F /* AppStateCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56691DF2CDDFA2DF5F263CF3 /* AppStateCoreTests.swift */; };
 		726A539D32A11574BB72A17D /* AppStateExitVaultFullTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490C9CA7FD044A526559CA53 /* AppStateExitVaultFullTests.swift */; };
+		7371C3F9A6EADA8C24730961 /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = 09980A02177F156C0F1B20D8 /* Yams */; };
 		7FA55FF63CB1CC6E03BEEBCE /* AppStateWikiLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0502C0261847F74C47B810 /* AppStateWikiLinkTests.swift */; };
 		84CE3D3A60AFCABF88D62FFC /* AppStateSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35A600692EB7955AD6BF962D /* AppStateSearchTests.swift */; };
 		8777D23DB72BE7ADC588DB22 /* AppStateFolderOperationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581F07CA2599C2ED63315D92 /* AppStateFolderOperationsTests.swift */; };
@@ -175,6 +176,7 @@
 			files = (
 				89E3EA85538AA25FAAB34501 /* SwiftTerm in Frameworks */,
 				3A7ED42BFA879ABEA38CD06D /* Grape in Frameworks */,
+				7371C3F9A6EADA8C24730961 /* Yams in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -304,6 +306,7 @@
 			packageProductDependencies = (
 				C4C7BBA308D786C6CE2F1328 /* SwiftTerm */,
 				E3D1D630282C1FE7995BB335 /* Grape */,
+				09980A02177F156C0F1B20D8 /* Yams */,
 			);
 			productName = Synapse;
 			productReference = 12B05C011702D5236468CEDD /* Synapse.app */;
@@ -350,6 +353,7 @@
 			packageReferences = (
 				DBB92F75A673FD80649EA29B /* XCRemoteSwiftPackageReference "Grape" */,
 				CCDCD6E4B4DBBC00978D8C93 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+				14519BB0FD8BF9DAF35FBD70 /* XCRemoteSwiftPackageReference "Yams" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B9CF596FCB07B1002F10E36 /* Products */;
@@ -701,6 +705,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		14519BB0FD8BF9DAF35FBD70 /* XCRemoteSwiftPackageReference "Yams" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jpsim/Yams";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.2.1;
+			};
+		};
 		CCDCD6E4B4DBBC00978D8C93 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
@@ -720,6 +732,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		09980A02177F156C0F1B20D8 /* Yams */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 14519BB0FD8BF9DAF35FBD70 /* XCRemoteSwiftPackageReference "Yams" */;
+			productName = Yams;
+		};
 		C4C7BBA308D786C6CE2F1328 /* SwiftTerm */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = CCDCD6E4B4DBBC00978D8C93 /* XCRemoteSwiftPackageReference "SwiftTerm" */;

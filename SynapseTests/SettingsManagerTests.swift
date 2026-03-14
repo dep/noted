@@ -401,13 +401,14 @@ final class SettingsManagerTests: XCTestCase {
     func test_defaultConfigPath_inApplicationSupport() {
         let manager = SettingsManager()
         let expectedPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Synapse/settings.json")
+            .appendingPathComponent("Synapse/settings.yml")
             .path
 
         // This is a bit of a hack since we can't easily test the default init without mocking
         // but we can at least verify the default path pattern
         XCTAssertTrue(manager.configPath.contains("Synapse"), "Default config path should be in Application Support/Synapse")
-        XCTAssertTrue(manager.configPath.hasSuffix(".json"), "Default config should be JSON file")
+        XCTAssertEqual(manager.configPath, expectedPath)
+        XCTAssertTrue(manager.configPath.hasSuffix(".yml"), "Default config should be YAML file")
     }
 
     // MARK: - Graph Pane
@@ -438,5 +439,265 @@ final class SettingsManagerTests: XCTestCase {
 
     func test_graphPane_includedInCaseIterable() {
         XCTAssertTrue(SidebarPane.allCases.contains(.graph))
+    }
+
+    // MARK: - Vault-Specific Settings (.noted)
+
+    func test_vaultSpecificSettings_usesNotedFolderWhenVaultRootProvided() {
+        // Create a mock vault directory
+        let vaultDir = tempDir.appendingPathComponent("TestVault", isDirectory: true)
+        try! FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
+
+        // Initialize SettingsManager with vault root
+        let notedSettings = SettingsManager(vaultRoot: vaultDir)
+
+        // Change a setting
+        notedSettings.fileExtensionFilter = "*.swift"
+
+        // Verify the settings file was created in .noted folder
+        let notedDir = vaultDir.appendingPathComponent(".noted", isDirectory: true)
+        let settingsFile = notedDir.appendingPathComponent("settings.yml")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: settingsFile.path),
+                      "Settings file should be created in .noted folder")
+
+        // Create new manager pointing to same vault and verify settings persisted
+        let newManager = SettingsManager(vaultRoot: vaultDir)
+        XCTAssertEqual(newManager.fileExtensionFilter, "*.swift",
+                       "Settings should persist to .noted/settings.yml")
+    }
+
+    func test_vaultSpecificSettings_createsNotedFolderAutomatically() {
+        let vaultDir = tempDir.appendingPathComponent("TestVault", isDirectory: true)
+        try! FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
+
+        // .noted folder should not exist initially
+        let notedDir = vaultDir.appendingPathComponent(".noted", isDirectory: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: notedDir.path),
+                       ".noted folder should not exist initially")
+
+        // Initialize SettingsManager - should create .noted folder
+        let _ = SettingsManager(vaultRoot: vaultDir)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: notedDir.path),
+                      ".noted folder should be created automatically")
+    }
+
+    func test_vaultSpecificSettings_githubPATStaysInApplicationSupport() {
+        let vaultDir = tempDir.appendingPathComponent("TestVault", isDirectory: true)
+        try! FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
+
+        // Create a separate Application Support config file for testing
+        let appSupportDir = tempDir.appendingPathComponent("AppSupport", isDirectory: true)
+        try! FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+        let globalConfigPath = appSupportDir.appendingPathComponent("settings.yml").path
+
+        // Initialize manager with both vault root and global config path
+        var manager = SettingsManager(vaultRoot: vaultDir, globalConfigPath: globalConfigPath)
+
+        // Set githubPAT - should go to global config
+        manager.githubPAT = "ghp_test_token"
+
+        // Verify token was saved to global config, not vault config
+        let notedSettingsFile = vaultDir.appendingPathComponent(".noted/settings.yml")
+        let globalText = try! String(contentsOfFile: globalConfigPath, encoding: .utf8)
+        XCTAssertTrue(globalText.contains("githubPAT:"))
+        XCTAssertTrue(globalText.contains("ghp_test_token"),
+                      "githubPAT should be saved to global config")
+
+        // Verify token is NOT in vault config
+        let vaultText = try! String(contentsOf: notedSettingsFile, encoding: .utf8)
+        XCTAssertFalse(vaultText.contains("githubPAT:"),
+                       "githubPAT should NOT be saved to vault-specific config")
+    }
+
+    func test_vaultSpecificSettings_layoutSettingsStayInApplicationSupport() {
+        let vaultDir = tempDir.appendingPathComponent("TestVault", isDirectory: true)
+        try! FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
+
+        let appSupportDir = tempDir.appendingPathComponent("AppSupport", isDirectory: true)
+        try! FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+        let globalConfigPath = appSupportDir.appendingPathComponent("settings.yml").path
+
+        let manager = SettingsManager(vaultRoot: vaultDir, globalConfigPath: globalConfigPath)
+        manager.leftSidebarPanes = [.files, .links]
+        manager.rightSidebarPanes = [.terminal, .tags]
+        manager.leftPaneHeights = [:]
+        manager.rightPaneHeights = [:]
+        manager.collapsedPanes = []
+        manager.fileTreeMode = .folder
+
+        let vaultText = try! String(contentsOf: vaultDir.appendingPathComponent(".noted/settings.yml"), encoding: .utf8)
+        let globalText = try! String(contentsOfFile: globalConfigPath, encoding: .utf8)
+
+        XCTAssertFalse(vaultText.contains("leftSidebarPanes:"))
+        XCTAssertFalse(vaultText.contains("rightSidebarPanes:"))
+        XCTAssertFalse(vaultText.contains("leftPaneHeights:"))
+        XCTAssertFalse(vaultText.contains("rightPaneHeights:"))
+        XCTAssertFalse(vaultText.contains("collapsedPanes:"))
+        XCTAssertFalse(vaultText.contains("fileTreeMode:"))
+
+        XCTAssertTrue(globalText.contains("leftSidebarPanes:"))
+        XCTAssertTrue(globalText.contains("- files"))
+        XCTAssertTrue(globalText.contains("- links"))
+        XCTAssertTrue(globalText.contains("rightSidebarPanes:"))
+        XCTAssertTrue(globalText.contains("- terminal"))
+        XCTAssertTrue(globalText.contains("- tags"))
+        XCTAssertTrue(globalText.contains("leftPaneHeights: {}"))
+        XCTAssertTrue(globalText.contains("rightPaneHeights: {}"))
+        XCTAssertTrue(globalText.contains("collapsedPanes: []"))
+        XCTAssertTrue(globalText.contains("fileTreeMode: folder"))
+    }
+
+    func test_vaultSpecificSettings_loadsLayoutSettingsFromGlobalConfig() {
+        let vaultDir = tempDir.appendingPathComponent("LayoutVault", isDirectory: true)
+        let notedDir = vaultDir.appendingPathComponent(".noted", isDirectory: true)
+        try! FileManager.default.createDirectory(at: notedDir, withIntermediateDirectories: true)
+
+        let appSupportDir = tempDir.appendingPathComponent("AppSupport", isDirectory: true)
+        try! FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+        let globalConfigPath = appSupportDir.appendingPathComponent("settings.yml")
+
+        let vaultYAML = """
+        onBootCommand: opencode
+        fileExtensionFilter: '*.md'
+        templatesDirectory: templates
+        autoSave: true
+        autoPush: false
+        pinnedItems: []
+        """
+        try! vaultYAML.write(to: notedDir.appendingPathComponent("settings.yml"), atomically: true, encoding: .utf8)
+
+        let globalYAML = """
+        githubPAT: ghp_test_token
+        leftSidebarPanes:
+          - files
+          - links
+        rightSidebarPanes:
+          - terminal
+          - tags
+        leftPaneHeights: {}
+        rightPaneHeights: {}
+        collapsedPanes: []
+        fileTreeMode: folder
+        """
+        try! globalYAML.write(to: globalConfigPath, atomically: true, encoding: .utf8)
+
+        let manager = SettingsManager(vaultRoot: vaultDir, globalConfigPath: globalConfigPath.path)
+
+        XCTAssertEqual(manager.leftSidebarPanes, [.files, .links])
+        XCTAssertEqual(manager.rightSidebarPanes, [.terminal, .tags])
+        XCTAssertEqual(manager.leftPaneHeights, [:])
+        XCTAssertEqual(manager.rightPaneHeights, [:])
+        XCTAssertEqual(manager.collapsedPanes, [])
+        XCTAssertEqual(manager.fileTreeMode, .folder)
+        XCTAssertEqual(manager.githubPAT, "ghp_test_token")
+    }
+
+    func test_vaultSpecificSettings_otherSettingsGoToNotedFolder() {
+        let vaultDir = tempDir.appendingPathComponent("TestVault", isDirectory: true)
+        try! FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
+
+        let manager = SettingsManager(vaultRoot: vaultDir)
+
+        // Set various non-sensitive settings
+        manager.onBootCommand = "npm start"
+        manager.fileExtensionFilter = "*.md, *.swift"
+        manager.hiddenFileFolderFilter = ".git, .build"
+        manager.templatesDirectory = "my-templates"
+        manager.dailyNotesEnabled = true
+        manager.autoSave = true
+
+        // Verify all these settings are in vault config
+        let notedSettingsFile = vaultDir.appendingPathComponent(".noted/settings.yml")
+        let yaml = try! String(contentsOf: notedSettingsFile, encoding: .utf8)
+
+        XCTAssertTrue(yaml.contains("onBootCommand:"))
+        XCTAssertTrue(yaml.contains("npm start"))
+        XCTAssertTrue(yaml.contains("fileExtensionFilter:"))
+        XCTAssertTrue(yaml.contains("*.md, *.swift"))
+        XCTAssertTrue(yaml.contains("hiddenFileFolderFilter:"))
+        XCTAssertTrue(yaml.contains(".git, .build"))
+        XCTAssertTrue(yaml.contains("templatesDirectory: my-templates"))
+        XCTAssertTrue(yaml.contains("dailyNotesEnabled: true"))
+        XCTAssertTrue(yaml.contains("autoSave: true"))
+    }
+
+    func test_vaultSpecificSettings_withoutVaultRootUsesDefaults() {
+        // Initialize without vault root - should use defaults
+        let manager = SettingsManager(vaultRoot: nil)
+
+        // All settings should have default values
+        XCTAssertEqual(manager.onBootCommand, "")
+        XCTAssertEqual(manager.fileExtensionFilter, "*.md, *.txt")
+        XCTAssertEqual(manager.hiddenFileFolderFilter, "")
+        XCTAssertEqual(manager.templatesDirectory, "templates")
+        XCTAssertEqual(manager.githubPAT, "")
+    }
+
+    func test_vaultSpecificSettings_changingVaultReloadsSettings() {
+        // Create two vaults with different settings
+        let vault1 = tempDir.appendingPathComponent("Vault1", isDirectory: true)
+        let vault2 = tempDir.appendingPathComponent("Vault2", isDirectory: true)
+        try! FileManager.default.createDirectory(at: vault1, withIntermediateDirectories: true)
+        try! FileManager.default.createDirectory(at: vault2, withIntermediateDirectories: true)
+
+        // Set up different settings in each vault
+        let manager1 = SettingsManager(vaultRoot: vault1)
+        manager1.fileExtensionFilter = "*.md"
+        manager1.onBootCommand = "vault1-cmd"
+
+        let manager2 = SettingsManager(vaultRoot: vault2)
+        manager2.fileExtensionFilter = "*.swift"
+        manager2.onBootCommand = "vault2-cmd"
+
+        // Create new manager for vault1 and verify it loads vault1's settings
+        let newManager1 = SettingsManager(vaultRoot: vault1)
+        XCTAssertEqual(newManager1.fileExtensionFilter, "*.md")
+        XCTAssertEqual(newManager1.onBootCommand, "vault1-cmd")
+
+        // Create new manager for vault2 and verify it loads vault2's settings
+        let newManager2 = SettingsManager(vaultRoot: vault2)
+        XCTAssertEqual(newManager2.fileExtensionFilter, "*.swift")
+        XCTAssertEqual(newManager2.onBootCommand, "vault2-cmd")
+    }
+
+    func test_vaultSpecificSettings_loadsExistingYAMLFile() {
+        let vaultDir = tempDir.appendingPathComponent("VaultYAML", isDirectory: true)
+        let notedDir = vaultDir.appendingPathComponent(".noted", isDirectory: true)
+        try! FileManager.default.createDirectory(at: notedDir, withIntermediateDirectories: true)
+
+        let yaml = """
+        onBootCommand: opencode
+        fileExtensionFilter: '*.md, *.swift'
+        hiddenFileFolderFilter: .git
+        templatesDirectory: templates
+        dailyNotesEnabled: true
+        dailyNotesFolder: daily
+        dailyNotesTemplate: Daily Note.md
+        dailyNotesOpenOnStartup: true
+        autoSave: true
+        autoPush: false
+        leftSidebarPanes:
+          - files
+          - tags
+        rightSidebarPanes:
+          - terminal
+        leftPaneHeights: {}
+        rightPaneHeights: {}
+        collapsedPanes: []
+        fileTreeMode: folder
+        pinnedItems: []
+        """
+        try! yaml.write(to: notedDir.appendingPathComponent("settings.yml"), atomically: true, encoding: .utf8)
+
+        let manager = SettingsManager(vaultRoot: vaultDir)
+
+        XCTAssertEqual(manager.onBootCommand, "opencode")
+        XCTAssertEqual(manager.fileExtensionFilter, "*.md, *.swift")
+        XCTAssertEqual(manager.hiddenFileFolderFilter, ".git")
+        XCTAssertTrue(manager.dailyNotesEnabled)
+        XCTAssertTrue(manager.autoSave)
+        XCTAssertEqual(manager.leftSidebarPanes, [.files, .tags, .links])
+        XCTAssertEqual(manager.rightSidebarPanes, [.terminal])
     }
 }
