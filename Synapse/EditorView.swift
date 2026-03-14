@@ -318,6 +318,10 @@ struct RawEditor: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? LinkAwareTextView else { return }
+        // Set currentFileURL before setPlainText so applyCollapsibleStyling
+        // looks up state for the correct file when the note changes.
+        textView.currentFileURL = appState.selectedFile
+        textView.allFiles = appState.allFiles
         if textView.string != text {
             context.coordinator.suppressSync = true
             let selected = textView.selectedRanges
@@ -325,8 +329,6 @@ struct RawEditor: NSViewRepresentable {
             textView.selectedRanges = selected
             context.coordinator.suppressSync = false
         }
-        textView.allFiles = appState.allFiles
-        textView.currentFileURL = appState.selectedFile
         textView.onOpenFile = { appState.openFile($0) }
         textView.onMatchCountUpdate = { count in appState.searchMatchCount = count }
         textView.onActivatePane = isEditable ? nil : { appState.focusPane(paneIndex) }
@@ -1128,6 +1130,106 @@ class LinkAwareTextView: NSTextView {
         }
     }
 
+    // MARK: - Block indent / dedent
+
+    private static let indentString = "    " // 4 spaces
+
+    /// Tab with a multi-line selection → indent every selected line.
+    /// Tab with a cursor or single-line selection → insert a literal tab (default).
+    override func insertTab(_ sender: Any?) {
+        let sel = selectedRange()
+        let nsText = string as NSString
+
+        // Determine whether the selection spans more than one line.
+        let selText = sel.length > 0 ? nsText.substring(with: sel) : ""
+        let spansMultipleLines = selText.contains("\n")
+
+        guard spansMultipleLines else {
+            super.insertTab(sender)
+            return
+        }
+
+        indentSelectedLines(dedent: false)
+    }
+
+    /// Shift-Tab: dedent every line touched by the selection.
+    /// Intercept via keyDown so we catch the Shift modifier.
+    private func indentSelectedLines(dedent: Bool) {
+        guard let storage = textStorage else { return }
+        let nsText = string as NSString
+        let sel = selectedRange()
+
+        // Expand selection to cover full lines.
+        let linesRange = nsText.lineRange(for: sel)
+
+        let linesText = nsText.substring(with: linesRange)
+        var lines = linesText.components(separatedBy: "\n")
+
+        // The last component after the trailing newline is always an empty
+        // string artifact — keep it so we don't drop the terminating newline.
+        let indent = Self.indentString
+
+        var newLines: [String] = []
+        for (i, line) in lines.enumerated() {
+            // Don't modify the empty artifact at the end.
+            if i == lines.count - 1 && line.isEmpty {
+                newLines.append(line)
+                continue
+            }
+            if dedent {
+                if line.hasPrefix(indent) {
+                    newLines.append(String(line.dropFirst(indent.count)))
+                } else if line.hasPrefix("\t") {
+                    newLines.append(String(line.dropFirst(1)))
+                } else {
+                    newLines.append(line) // nothing to dedent
+                }
+            } else {
+                newLines.append(indent + line)
+            }
+        }
+
+        let newText = newLines.joined(separator: "\n")
+        if shouldChangeText(in: linesRange, replacementString: newText) {
+            storage.beginEditing()
+            storage.replaceCharacters(in: linesRange, with: newText)
+            storage.endEditing()
+            didChangeText()
+
+            // Restore a selection that covers the same lines.
+            let newLinesRange = NSRange(location: linesRange.location, length: (newText as NSString).length)
+            setSelectedRange(newLinesRange)
+        }
+    }
+
+    override func insertNewline(_ sender: Any?) {
+        // Preserve the leading whitespace of the current line on the new line.
+        let nsText = string as NSString
+        let cursor = selectedRange().location
+        guard cursor != NSNotFound else { super.insertNewline(sender); return }
+
+        // Find the start of the current line.
+        let lineRange = nsText.lineRange(for: NSRange(location: cursor, length: 0))
+        let lineText = nsText.substring(with: lineRange)
+
+        // Measure leading whitespace (spaces or tabs only).
+        var indentEnd = lineText.startIndex
+        for ch in lineText {
+            if ch == " " || ch == "\t" {
+                indentEnd = lineText.index(after: indentEnd)
+            } else {
+                break
+            }
+        }
+        let indent = String(lineText[lineText.startIndex..<indentEnd])
+
+        super.insertNewline(sender)
+
+        if !indent.isEmpty {
+            insertText(indent, replacementRange: selectedRange())
+        }
+    }
+
     override func keyDown(with event: NSEvent) {
         if let popover = completionPopover, popover.isShown {
             switch event.keyCode {
@@ -1136,6 +1238,15 @@ class LinkAwareTextView: NSTextView {
             case 36, 76: completionVC?.selectCurrentItem();  return  // return / numpad enter
             case 53: dismissCompletion();                    return  // escape
             default: break
+            }
+        }
+        // Shift-Tab on a multi-line selection → dedent.
+        if event.keyCode == 48, event.modifierFlags.contains(.shift) {
+            let sel = selectedRange()
+            let selText = sel.length > 0 ? (string as NSString).substring(with: sel) : ""
+            if selText.contains("\n") {
+                indentSelectedLines(dedent: true)
+                return
             }
         }
         super.keyDown(with: event)

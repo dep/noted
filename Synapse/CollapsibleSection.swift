@@ -6,6 +6,10 @@ struct CollapsibleSection: Identifiable, Equatable {
     let headerRange: NSRange
     let contentRange: NSRange
     var isCollapsed: Bool
+    /// The verbatim text of the header line (e.g. "- 11:20 Presentation").
+    /// Used as a content-stable identifier so that edits above the section
+    /// don't change the key and unexpectedly reset collapse state.
+    let headerText: String
 
     /// Toggle the collapsed state
     mutating func toggle() {
@@ -32,9 +36,10 @@ struct CollapsibleSection: Identifiable, Equatable {
         return before + after
     }
 
-    /// A stable identifier based on position (used by CollapsibleStateManager).
+    /// A content-stable identifier: the header line text.
+    /// This is unaffected by edits above the section in the document.
     func getIdentifier() -> String {
-        return "\(headerRange.location)-\(headerRange.length)"
+        return headerText
     }
 }
 
@@ -75,7 +80,8 @@ class CollapsibleSectionParser {
                 sections.append(CollapsibleSection(
                     headerRange: headerRange,
                     contentRange: contentRange,
-                    isCollapsed: false
+                    isCollapsed: false,
+                    headerText: line
                 ))
             } else {
                 // Still register the section, with an empty content range, so
@@ -83,7 +89,8 @@ class CollapsibleSectionParser {
                 sections.append(CollapsibleSection(
                     headerRange: headerRange,
                     contentRange: NSRange(location: lineStartOffsets[lineIndex] + headerLength, length: 0),
-                    isCollapsed: false
+                    isCollapsed: false,
+                    headerText: line
                 ))
             }
         }

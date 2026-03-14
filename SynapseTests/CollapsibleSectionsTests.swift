@@ -83,7 +83,8 @@ final class CollapsibleSectionsTests: XCTestCase {
         var section = CollapsibleSection(
             headerRange: NSRange(location: 0, length: 10),
             contentRange: NSRange(location: 11, length: 50),
-            isCollapsed: false
+            isCollapsed: false,
+            headerText: "- Some header"
         )
         
         section.toggle()
@@ -130,7 +131,8 @@ final class CollapsibleSectionsTests: XCTestCase {
         let section = CollapsibleSection(
             headerRange: NSRange(location: 0, length: 20),
             contentRange: NSRange(location: 21, length: 38),
-            isCollapsed: false
+            isCollapsed: false,
+            headerText: "- 11:20 Presentation"
         )
         
         let visibleText = section.getVisibleText(from: text)
@@ -150,7 +152,8 @@ final class CollapsibleSectionsTests: XCTestCase {
         let section = CollapsibleSection(
             headerRange: NSRange(location: 0, length: 20),
             contentRange: NSRange(location: 21, length: 38),
-            isCollapsed: true
+            isCollapsed: true,
+            headerText: "- 11:20 Presentation"
         )
         
         let visibleText = section.getVisibleText(from: text)
