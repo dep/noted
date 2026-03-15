@@ -13,7 +13,6 @@ import { useTheme } from '../theme/ThemeContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { GitService, GitError } from '../services/gitService';
-import { FileSystemService } from '../services/FileSystemService';
 import { OnboardingStorage } from '../services/onboardingStorage';
 import git from 'isomorphic-git';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -21,7 +20,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 type CloneRepositoryScreenProps = NativeStackScreenProps<RootStackParamList, 'CloneRepository'>;
 
 // Use the document directory for the vault
-const getVaultPath = () => {
+const getVaultRootPath = () => {
   const docDir = FileSystem.documentDirectory || 'file:///';
   // Android returns 'file:/data/user/...' which is malformed
   // We need 'file:///data/user/...' with three slashes after file:
@@ -29,6 +28,16 @@ const getVaultPath = () => {
   // Ensure it ends with exactly one slash
   const normalizedDir = fixedDir.replace(/\/+$/, '') + '/';
   return `${normalizedDir}vault`;
+};
+
+const getRepositoryDirectoryName = (url: string) => {
+  const normalizedUrl = url.trim().replace(/\.git$/, '').replace(/\/+$/, '');
+  const repoName = normalizedUrl.split(/[/:]/).pop() || 'repository';
+  return repoName.replace(/[^A-Za-z0-9._-]/g, '-');
+};
+
+const getRepositoryPath = (url: string) => {
+  return `${getVaultRootPath()}/${getRepositoryDirectoryName(url)}`;
 };
 
 export function CloneRepositoryScreen({ navigation }: CloneRepositoryScreenProps) {
@@ -70,33 +79,48 @@ export function CloneRepositoryScreen({ navigation }: CloneRepositoryScreenProps
         return;
       }
 
-      // Get the vault path
-      const vaultPath = getVaultPath();
+      const vaultRootPath = getVaultRootPath();
+      const cleanUrl = repoUrl.trim().replace(/\.git$/, '');
+      const repositoryPath = getRepositoryPath(cleanUrl);
       
-      // Ensure the vault directory exists
+      // Ensure the vault root exists
       try {
-        const dirInfo = await FileSystem.getInfoAsync(vaultPath);
+        const dirInfo = await FileSystem.getInfoAsync(vaultRootPath);
         if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(vaultPath, { intermediates: true });
+          await FileSystem.makeDirectoryAsync(vaultRootPath, { intermediates: true });
         }
       } catch (dirError) {
         console.log('Vault directory may already exist:', dirError);
       }
 
+      const repoInfo = await FileSystem.getInfoAsync(repositoryPath);
+      if (repoInfo.exists) {
+        const gitConfigInfo = await FileSystem.getInfoAsync(`${repositoryPath}/.git/config`);
+
+        if (gitConfigInfo.exists) {
+          await OnboardingStorage.setActiveRepositoryPath(repositoryPath);
+          await OnboardingStorage.setOnboardingCompleted();
+          navigation.navigate('Home');
+          return;
+        }
+
+        await FileSystem.deleteAsync(repositoryPath, { idempotent: true });
+      }
+
       // Update credentials for this specific repo
-      const cleanUrl = repoUrl.trim().replace(/\.git$/, '');
       await GitService.setCredentials(cleanUrl, credentials.username, credentials.token);
 
       // Clone the repository
       await GitService.clone(
         cleanUrl,
-        vaultPath,
+        repositoryPath,
         (stage: git.ProgressStage) => {
           setProgress(`${stage.phase}: ${stage.loaded}/${stage.total || '?'} ${stage.lengthComputable ? '' : 'objects'}`);
         }
       );
 
       setProgress('Clone complete!');
+      await OnboardingStorage.setActiveRepositoryPath(repositoryPath);
       
       // Mark onboarding as completed
       await OnboardingStorage.setOnboardingCompleted();

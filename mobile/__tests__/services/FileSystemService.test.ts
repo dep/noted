@@ -1,7 +1,7 @@
 import { FileSystemService } from '../../src/services/FileSystemService';
 
 // Mock expo-file-system
-jest.mock('expo-file-system', () => ({
+jest.mock('expo-file-system/legacy', () => ({
   documentDirectory: 'file:///mock/documents/',
   EncodingType: {
     UTF8: 'utf8',

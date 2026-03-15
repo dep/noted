@@ -12,12 +12,41 @@ const getDocumentDirectory = () => {
   return FileSystem.documentDirectory || 'file:///';
 };
 
+const normalizeExpoUri = (path: string): string => {
+  if (!path) {
+    return path;
+  }
+
+  if (path.startsWith('file:///')) {
+    return path;
+  }
+
+  if (path.startsWith('file://')) {
+    return `file:///${path.slice('file://'.length).replace(/^\/+/, '')}`;
+  }
+
+  if (path.startsWith('file:/')) {
+    return `file:///${path.slice('file:/'.length).replace(/^\/+/, '')}`;
+  }
+
+  if (path.startsWith('/')) {
+    return `file://${path}`;
+  }
+
+  const docDir = getDocumentDirectory().replace(/\/+$/, '');
+  return `${docDir}/${path.replace(/^\/+/, '')}`;
+};
+
 // Convert our path format to Expo's file:// URI format
 const toExpoUri = (path: string): string => {
-  const docDir = getDocumentDirectory();
+  if (path.startsWith('file:')) {
+    return normalizeExpoUri(path);
+  }
+
+  const docDir = getDocumentDirectory().replace(/\/+$/, '') + '/';
   // Remove leading slash if present to avoid double slashes
   const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-  return `${docDir}${cleanPath}`;
+  return normalizeExpoUri(`${docDir}${cleanPath}`);
 };
 
 // Convert Expo's file:// URI back to our path format

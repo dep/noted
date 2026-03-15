@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { FileDrawer } from '../components/FileDrawer';
 import { FileSystemService } from '../services/FileSystemService';
+import { OnboardingStorage } from '../services/onboardingStorage';
 import * as FileSystem from 'expo-file-system/legacy';
 
 type HomeScreenProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
@@ -24,6 +25,18 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
   const { theme, isDark, toggleTheme, followSystem, setFollowSystem } = useTheme();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeFilePath, setActiveFilePath] = useState<string | undefined>(undefined);
+  const [repositoryPath, setRepositoryPath] = useState<string>(getVaultPath());
+
+  useEffect(() => {
+    const loadRepositoryPath = async () => {
+      const savedPath = await OnboardingStorage.getActiveRepositoryPath();
+      if (savedPath) {
+        setRepositoryPath(savedPath);
+      }
+    };
+
+    loadRepositoryPath();
+  }, []);
 
   const handleFileSelect = (path: string) => {
     setActiveFilePath(path);
@@ -35,8 +48,7 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
       // Generate a unique filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const fileName = `Untitled-${timestamp}.md`;
-      const vaultPath = getVaultPath();
-      const filePath = `${vaultPath}/${fileName}`;
+      const filePath = `${repositoryPath}/${fileName}`;
 
       // Create the file with empty content
       await FileSystemService.writeFile(filePath, '# New Note\n\n');
@@ -62,7 +74,7 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
           onClose={handleCloseDrawer}
           onFileSelect={handleFileSelect}
           onNewNote={handleNewNote}
-          vaultPath={getVaultPath()}
+          vaultPath={repositoryPath}
           activeFilePath={activeFilePath}
         />
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
