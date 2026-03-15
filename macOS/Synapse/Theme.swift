@@ -25,6 +25,7 @@ enum SynapseTheme {
     static let editorCodeBackground = NSColor(white: 0.10, alpha: 1)
     static let editorSelection = NSColor(calibratedRed: 0.20, green: 0.44, blue: 0.76, alpha: 0.45)
     static let editorLink = NSColor(calibratedRed: 0.47, green: 0.77, blue: 1.00, alpha: 1)
+    static let editorUnresolvedLink = NSColor(calibratedRed: 0.85, green: 0.35, blue: 0.50, alpha: 1)
 
     // NSColor versions of SwiftUI Color constants for AppKit use
     static let nsPanelElevated = NSColor(white: 0.10, alpha: 1)

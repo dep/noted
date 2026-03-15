@@ -317,6 +317,9 @@ struct RawEditor: NSViewRepresentable {
                 textView?.window?.makeFirstResponder(textView)
             }
         }
+        textView.onCreateNote = { [weak appState] name, directory in
+            try? appState?.createNote(named: name, in: directory)
+        }
 
         let scroll = NSScrollView()
         scroll.documentView = textView
@@ -454,9 +457,15 @@ private enum MarkdownTheme {
     static let h2   = NSFont.systemFont(ofSize: 22, weight: .bold)
     static let h3   = NSFont.systemFont(ofSize: 18, weight: .semibold)
     static let h4   = NSFont.systemFont(ofSize: 16, weight: .semibold)
-    static let dimColor       = SynapseTheme.editorMuted
-    static let linkColor      = SynapseTheme.editorLink
-    static let codeBackground = SynapseTheme.editorCodeBackground
+    static let dimColor            = SynapseTheme.editorMuted
+    static let linkColor           = SynapseTheme.editorLink
+    static let unresolvedLinkColor = SynapseTheme.editorUnresolvedLink
+    static let codeBackground      = SynapseTheme.editorCodeBackground
+}
+
+/// Custom attribute key for wiki links — avoids NSTextView overriding our foreground color via linkTextAttributes.
+extension NSAttributedString.Key {
+    static let wikilinkTarget = NSAttributedString.Key("Synapse.wikilinkTarget")
 }
 
 /// Thread-safe regex cache for markdown styling outside of LinkAwareTextView.
@@ -680,21 +689,25 @@ extension LinkAwareTextView {
         hideGroup("(!\\[\\[)([^\\]]+)(\\]\\])", group: 1)
         hideGroup("(!\\[\\[)([^\\]]+)(\\]\\])", group: 3)
 
-        // YAML frontmatter block: hide the --- fences
-        let fullString = text
-        if fullString.hasPrefix("---") {
-            let lines = fullString.components(separatedBy: "\n")
-            var fenceCount = 0
-            var charOffset = 0
-            for line in lines {
-                let lineLength = (line as NSString).length
-                if line == "---" {
-                    let fenceRange = NSRange(location: charOffset, length: lineLength)
-                    storage.addAttributes(hiddenAttrs, range: fenceRange)
-                    fenceCount += 1
-                    if fenceCount == 2 { break }
+        // YAML frontmatter block: hide the --- fences only in read-only preview.
+        // In hideMarkdownWhileEditing mode the view is still editable, so we
+        // leave the fences visible to make frontmatter easier to manage.
+        if !isEditable {
+            let fullString = text
+            if fullString.hasPrefix("---") {
+                let lines = fullString.components(separatedBy: "\n")
+                var fenceCount = 0
+                var charOffset = 0
+                for line in lines {
+                    let lineLength = (line as NSString).length
+                    if line == "---" {
+                        let fenceRange = NSRange(location: charOffset, length: lineLength)
+                        storage.addAttributes(hiddenAttrs, range: fenceRange)
+                        fenceCount += 1
+                        if fenceCount == 2 { break }
+                    }
+                    charOffset += lineLength + 1
                 }
-                charOffset += lineLength + 1
             }
         }
 
@@ -789,14 +802,21 @@ extension LinkAwareTextView {
                 .link: inner,
             ], range: range)
         }
+        let noteNames = Set(allFiles.map { $0.deletingPathExtension().lastPathComponent.lowercased() })
         applyRegex("\\[\\[[^\\]]+\\]\\]", to: text, storage: storage) { range in
             guard range.length > 4 else { return }
             let inner = (text.substring(with: range) as NSString)
                 .substring(with: NSRange(location: 2, length: range.length - 4))
+            // Strip alias and heading components for resolution check
+            let baseName = (inner.components(separatedBy: "|").first ?? inner)
+                .components(separatedBy: "#").first?
+                .trimmingCharacters(in: .whitespaces) ?? inner
+            let resolved = !noteNames.isEmpty && noteNames.contains(baseName.lowercased())
+            // Use a custom attribute instead of .link so NSTextView doesn't override our foreground color.
             storage.addAttributes([
-                .foregroundColor: MarkdownTheme.linkColor,
+                .foregroundColor: resolved ? MarkdownTheme.linkColor : MarkdownTheme.unresolvedLinkColor,
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
-                .link: inner,
+                .wikilinkTarget: inner,
             ], range: range)
         }
         if let markdownLinkRegex = LinkAwareTextView.markdownLinkRegex {
@@ -1081,6 +1101,7 @@ class LinkAwareTextView: NSTextView {
     var allFiles: [URL] = []
     var onOpenFile: ((URL) -> Void)?
     var onActivatePane: (() -> Void)?
+    var onCreateNote: ((String, URL?) -> Void)?  // name, preferred directory
     var currentFileURL: URL?
     var onMatchCountUpdate: ((Int) -> Void)?
     var onWikiLinkRequest: (() -> Void)?   // Called when [[ is typed
@@ -1125,6 +1146,18 @@ class LinkAwareTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         if activatePaneOnReadOnlyInteraction(isEditable: isEditable, onActivatePane: onActivatePane) {
             return
+        }
+        // Handle clicks on wiki links (stored as .wikilinkTarget to preserve our custom color).
+        if event.modifierFlags.contains(.command) || !isEditable {
+            let point = convert(event.locationInWindow, from: nil)
+            if let layout = layoutManager, let container = textContainer {
+                let charIndex = layout.characterIndex(for: point, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
+                if charIndex < (string as NSString).length,
+                   let target = textStorage?.attribute(.wikilinkTarget, at: charIndex, effectiveRange: nil) as? String {
+                    _ = handleLinkClick(target)
+                    return
+                }
+            }
         }
         super.mouseDown(with: event)
     }
@@ -1656,12 +1689,20 @@ class LinkAwareTextView: NSTextView {
             return true
         }
 
-        guard let name = link as? String else { return false }
+        guard let inner = link as? String else { return false }
+        // Strip alias and heading for resolution
+        let name = inner.components(separatedBy: "|").first
+            .flatMap { $0.components(separatedBy: "#").first }
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? inner
+
         if let match = allFiles.first(where: { $0.deletingPathExtension().lastPathComponent == name }) {
             onOpenFile?(match)
             return true
         }
-        return false
+
+        // Unresolved — create a new note with this name in the same folder as the current file.
+        onCreateNote?(name, currentFileURL?.deletingLastPathComponent())
+        return true
     }
 
     private func rectForCaret() -> NSRect? {
