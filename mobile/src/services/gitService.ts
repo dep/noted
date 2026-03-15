@@ -550,6 +550,13 @@ interface RepoMetadataFile {
   files: Record<string, { sha: string; mode: string; type: string }>;
 }
 
+interface GitHubTreeEntry {
+  path: string;
+  type: string;
+  mode: string;
+  sha: string;
+}
+
 const CREDENTIALS_KEY = 'git_credentials';
 const REPO_METADATA_DIR = '.synapse';
 const REPO_METADATA_FILE = 'repo.json';
@@ -809,6 +816,108 @@ export class GitService {
     });
   }
 
+  private async fetchGitHubApiRemoteState(metadata: RepoMetadataFile): Promise<{
+    commitSha: string;
+    treeSha: string;
+    tree: GitHubTreeEntry[];
+  }> {
+    const branchInfo = await this.githubRequest<{ commit: { sha: string } }>(
+      `/repos/${metadata.owner}/${metadata.repo}/branches/${encodeURIComponent(metadata.branch)}`,
+      metadata.repoUrl
+    );
+    const commitSha = branchInfo.commit.sha;
+
+    const commitInfo = await this.githubRequest<{ tree: { sha: string } }>(
+      `/repos/${metadata.owner}/${metadata.repo}/git/commits/${commitSha}`,
+      metadata.repoUrl
+    );
+    const treeSha = commitInfo.tree.sha;
+
+    const treeResponse = await this.githubRequest<{ tree: GitHubTreeEntry[] }>(
+      `/repos/${metadata.owner}/${metadata.repo}/git/trees/${treeSha}?recursive=1`,
+      metadata.repoUrl
+    );
+
+    return {
+      commitSha,
+      treeSha,
+      tree: treeResponse.tree,
+    };
+  }
+
+  private async downloadGitHubBlobToPath(metadata: RepoMetadataFile, blobSha: string, targetPath: string): Promise<void> {
+    const blobResponse = await this.githubRequest<{ content: string; encoding: string }>(
+      `/repos/${metadata.owner}/${metadata.repo}/git/blobs/${blobSha}`,
+      metadata.repoUrl
+    );
+
+    await ensureParentDirectory(targetPath);
+    await FileSystem.writeAsStringAsync(toExpoUri(targetPath), sanitizeGitHubBase64(blobResponse.content), {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+  }
+
+  private async refreshViaGitHubApi(dir: string): Promise<void> {
+    const metadata = await this.loadRepoMetadata(dir);
+    if (!metadata) {
+      throw new Error('Missing repository metadata');
+    }
+
+    const remoteState = await this.fetchGitHubApiRemoteState(metadata);
+    const remoteBlobs = remoteState.tree.filter((entry) => entry.type === 'blob');
+    const nextFiles: RepoMetadataFile['files'] = { ...metadata.files };
+
+    for (const blob of remoteBlobs) {
+      const targetPath = joinRepoPath(dir, blob.path);
+      const localInfo = await FileSystem.getInfoAsync(toExpoUri(targetPath));
+      const previousEntry = metadata.files[blob.path];
+
+      if (!localInfo.exists) {
+        await this.downloadGitHubBlobToPath(metadata, blob.sha, targetPath);
+        nextFiles[blob.path] = {
+          sha: blob.sha,
+          mode: blob.mode,
+          type: blob.mode === '120000' ? 'symlink' : 'blob',
+        };
+        continue;
+      }
+
+      if (previousEntry && previousEntry.sha !== blob.sha) {
+        const localContentBase64 = await FileSystem.readAsStringAsync(toExpoUri(targetPath), {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const localHash = await this.simpleHash(localContentBase64);
+
+        if (localHash === previousEntry.sha) {
+          await this.downloadGitHubBlobToPath(metadata, blob.sha, targetPath);
+          nextFiles[blob.path] = {
+            sha: blob.sha,
+            mode: blob.mode,
+            type: blob.mode === '120000' ? 'symlink' : 'blob',
+          };
+          continue;
+        }
+      }
+
+      if (previousEntry) {
+        nextFiles[blob.path] = previousEntry;
+      } else {
+        nextFiles[blob.path] = {
+          sha: blob.sha,
+          mode: blob.mode,
+          type: blob.mode === '120000' ? 'symlink' : 'blob',
+        };
+      }
+    }
+
+    await this.saveRepoMetadata(dir, {
+      ...metadata,
+      commitSha: remoteState.commitSha,
+      treeSha: remoteState.treeSha,
+      files: nextFiles,
+    });
+  }
+
   private async collectGitHubApiChanges(
     dir: string,
     metadata: RepoMetadataFile,
@@ -940,7 +1049,9 @@ export class GitService {
     }
 
     for (const path of deletedEntries) {
-      newTreeEntries.push({ path, sha: null });
+      // Get the mode from existing metadata if available, otherwise use default
+      const existingMode = metadata.files[path]?.mode || '100644';
+      newTreeEntries.push({ path, mode: existingMode, sha: null });
       delete updatedFiles[path];
     }
 
@@ -968,15 +1079,76 @@ export class GitService {
     );
 
     console.log('[sync-github] Updating branch reference...');
-    await this.githubRequest(
-      `/repos/${metadata.owner}/${metadata.repo}/git/refs/heads/${encodeURIComponent(metadata.branch)}`,
-      metadata.repoUrl,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sha: createdCommit.sha, force: false }),
+    try {
+      await this.githubRequest(
+        `/repos/${metadata.owner}/${metadata.repo}/git/refs/heads/${encodeURIComponent(metadata.branch)}`,
+        metadata.repoUrl,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sha: createdCommit.sha, force: false }),
+        }
+      );
+    } catch (error: any) {
+      // Handle "not a fast forward" error by merging with remote changes
+      if (error?.status === 422 || error?.message?.includes('fast forward')) {
+        console.log('[sync-github] Remote has new commits, fetching latest...');
+        
+        // Get the latest remote commit
+        const latestRef = await this.githubRequest<{ object: { sha: string } }>(
+          `/repos/${metadata.owner}/${metadata.repo}/git/refs/heads/${encodeURIComponent(metadata.branch)}`,
+          metadata.repoUrl,
+          { method: 'GET' }
+        );
+        const latestRemoteSha = latestRef.object.sha;
+        
+        if (latestRemoteSha !== remoteCommitSha) {
+          console.log('[sync-github] Creating merge commit with latest remote...');
+          
+          // Create a merge commit with both parents
+          const mergeCommit = await this.githubRequest<{ sha: string }>(
+            `/repos/${metadata.owner}/${metadata.repo}/git/commits`,
+            metadata.repoUrl,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                message: `${message} (merged with remote changes)`, 
+                tree: createdTree.sha, 
+                parents: [remoteCommitSha, latestRemoteSha] 
+              }),
+            }
+          );
+          
+          // Try updating again
+          await this.githubRequest(
+            `/repos/${metadata.owner}/${metadata.repo}/git/refs/heads/${encodeURIComponent(metadata.branch)}`,
+            metadata.repoUrl,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sha: mergeCommit.sha, force: false }),
+            }
+          );
+          
+          console.log('[sync-github] Successfully pushed with merge commit:', mergeCommit.sha);
+          
+          // Update metadata with merge commit
+          const nextMetadata: RepoMetadataFile = {
+            ...metadata,
+            commitSha: mergeCommit.sha,
+            treeSha: createdTree.sha,
+            files: updatedFiles,
+          };
+          await this.saveRepoMetadata(dir, nextMetadata);
+          
+          return { pulled: true, committed: mergeCommit.sha, pushed: true };
+        }
       }
-    );
+      
+      // If it's not a fast forward error or merging failed, rethrow
+      throw error;
+    }
 
     console.log('[sync-github] Saving updated metadata...');
     const nextMetadata: RepoMetadataFile = {
@@ -1180,6 +1352,20 @@ export class GitService {
     return { pulled, committed, pushed };
   }
 
+  async refreshRemote(dir: string): Promise<void> {
+    const repoMetadata = await this.loadRepoMetadata(dir).catch(() => null);
+    if (repoMetadata?.transport === 'github-api') {
+      try {
+        await this.refreshViaGitHubApi(dir);
+        return;
+      } catch (error) {
+        this.handleError(error as Error, 'Refresh');
+      }
+    }
+
+    await this.pull(dir);
+  }
+
   // Helper Methods
   async getStatus(dir: string): Promise<StatusResult> {
     try {
@@ -1250,6 +1436,10 @@ export class GitService {
 
   static async pull(dir: string): Promise<void> {
     return GitService.getInstance().pull(dir);
+  }
+
+  static async refreshRemote(dir: string): Promise<void> {
+    return GitService.getInstance().refreshRemote(dir);
   }
 
   static async commit(dir: string): Promise<string | null> {

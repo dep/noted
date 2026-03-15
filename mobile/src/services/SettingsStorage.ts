@@ -7,11 +7,18 @@ export interface DailyNoteSettings {
   dailyNotesOpenOnStartup: boolean;
 }
 
+export interface FileBrowserSettings {
+  fileExtensionFilter: string;
+  hiddenFileFolderFilter: string;
+}
+
 const STORAGE_KEYS = {
   DAILY_NOTES_ENABLED: 'dailyNotesEnabled',
   DAILY_NOTES_FOLDER: 'dailyNotesFolder',
   DAILY_NOTES_TEMPLATE: 'dailyNotesTemplate',
   DAILY_NOTES_OPEN_ON_STARTUP: 'dailyNotesOpenOnStartup',
+  FILE_EXTENSION_FILTER: 'fileExtensionFilter',
+  HIDDEN_FILE_FOLDER_FILTER: 'hiddenFileFolderFilter',
 };
 
 const DEFAULTS = {
@@ -19,6 +26,8 @@ const DEFAULTS = {
   dailyNotesFolder: 'daily',
   dailyNotesTemplate: '',
   dailyNotesOpenOnStartup: false,
+  fileExtensionFilter: '*.md, *.txt',
+  hiddenFileFolderFilter: '',
 };
 
 export class SettingsStorage {
@@ -76,6 +85,39 @@ export class SettingsStorage {
       dailyNotesFolder: folder ?? DEFAULTS.dailyNotesFolder,
       dailyNotesTemplate: template ?? DEFAULTS.dailyNotesTemplate,
       dailyNotesOpenOnStartup: openOnStartup === 'true',
+    };
+  }
+
+  // fileExtensionFilter
+  static async getFileExtensionFilter(): Promise<string> {
+    const value = await AsyncStorage.getItem(STORAGE_KEYS.FILE_EXTENSION_FILTER);
+    return value ?? DEFAULTS.fileExtensionFilter;
+  }
+
+  static async setFileExtensionFilter(filter: string): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.FILE_EXTENSION_FILTER, filter);
+  }
+
+  // hiddenFileFolderFilter
+  static async getHiddenFileFolderFilter(): Promise<string> {
+    const value = await AsyncStorage.getItem(STORAGE_KEYS.HIDDEN_FILE_FOLDER_FILTER);
+    return value ?? DEFAULTS.hiddenFileFolderFilter;
+  }
+
+  static async setHiddenFileFolderFilter(filter: string): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.HIDDEN_FILE_FOLDER_FILTER, filter);
+  }
+
+  // Get all file browser settings at once
+  static async getAllFileBrowserSettings(): Promise<FileBrowserSettings> {
+    const [fileExtensionFilter, hiddenFileFolderFilter] = await Promise.all([
+      AsyncStorage.getItem(STORAGE_KEYS.FILE_EXTENSION_FILTER),
+      AsyncStorage.getItem(STORAGE_KEYS.HIDDEN_FILE_FOLDER_FILTER),
+    ]);
+
+    return {
+      fileExtensionFilter: fileExtensionFilter ?? DEFAULTS.fileExtensionFilter,
+      hiddenFileFolderFilter: hiddenFileFolderFilter ?? DEFAULTS.hiddenFileFolderFilter,
     };
   }
 }

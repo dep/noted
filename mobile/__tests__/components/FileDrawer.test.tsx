@@ -143,7 +143,13 @@ describe('FileDrawer', () => {
       );
 
       await waitFor(() => {
-        expect(FileSystemService.listDirectory).toHaveBeenCalledWith('/vault');
+        expect(FileSystemService.listDirectory).toHaveBeenCalledWith(
+          '/vault',
+          expect.objectContaining({
+            fileExtensionFilter: expect.any(String),
+            hiddenFileFolderFilter: expect.any(String)
+          })
+        );
       });
       expect(FileSystemService.getFlatFileList).not.toHaveBeenCalled();
     });
@@ -160,13 +166,25 @@ describe('FileDrawer', () => {
       );
 
       await waitFor(() => {
-        expect(FileSystemService.listDirectory).toHaveBeenCalledWith('/vault');
+        expect(FileSystemService.listDirectory).toHaveBeenCalledWith(
+          '/vault',
+          expect.objectContaining({
+            fileExtensionFilter: expect.any(String),
+            hiddenFileFolderFilter: expect.any(String)
+          })
+        );
       });
 
       fireEvent.press(getByTestId('view-toggle-button'));
 
       await waitFor(() => {
-        expect(FileSystemService.getFlatFileList).toHaveBeenCalledWith('/vault');
+        expect(FileSystemService.getFlatFileList).toHaveBeenCalledWith(
+          '/vault',
+          expect.objectContaining({
+            fileExtensionFilter: expect.any(String),
+            hiddenFileFolderFilter: expect.any(String)
+          })
+        );
       });
     });
 
@@ -188,7 +206,13 @@ describe('FileDrawer', () => {
       );
 
       await waitFor(() => {
-        expect(FileSystemService.getFlatFileList).toHaveBeenCalledWith('/vault');
+        expect(FileSystemService.getFlatFileList).toHaveBeenCalledWith(
+          '/vault',
+          expect.objectContaining({
+            fileExtensionFilter: expect.any(String),
+            hiddenFileFolderFilter: expect.any(String)
+          })
+        );
       });
     });
   });
@@ -241,7 +265,13 @@ describe('FileDrawer', () => {
       fireEvent.press(getByText('folder'));
 
       await waitFor(() => {
-        expect(FileSystemService.listDirectory).toHaveBeenCalledWith('/vault/folder');
+        expect(FileSystemService.listDirectory).toHaveBeenCalledWith(
+          '/vault/folder',
+          expect.objectContaining({
+            fileExtensionFilter: '*.md, *.txt',
+            hiddenFileFolderFilter: ''
+          })
+        );
         expect(getByText('nested.md')).toBeTruthy();
       });
     });

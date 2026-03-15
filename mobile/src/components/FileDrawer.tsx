@@ -17,6 +17,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/ThemeContext';
 import { FileSystemService, FileNode } from '../services/FileSystemService';
 import { PinningStorage, PinnedItem } from '../services/PinningStorage';
+import { SettingsStorage } from '../services/SettingsStorage';
+import { TemplateStorage } from '../services/TemplateStorage';
+import { GitService } from '../services/gitService';
+import { OnboardingStorage } from '../services/onboardingStorage';
 
 interface FileDrawerProps {
   isOpen: boolean;
@@ -60,9 +64,14 @@ export function FileDrawer({
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [lastLoadedVaultPath, setLastLoadedVaultPath] = useState<string | null>(null);
   const [pinnedItems, setPinnedItems] = useState<PinnedItem[]>([]);
+  const [fileFilters, setFileFilters] = useState<{ fileExtensionFilter: string; hiddenFileFolderFilter: string }>({ 
+    fileExtensionFilter: '*.md, *.txt', 
+    hiddenFileFolderFilter: '' 
+  });
+  const [templatesDirectory, setTemplatesDirectory] = useState<string>('templates');
   const slideAnim = useState(new Animated.Value(-Dimensions.get('window').width * 0.8))[0];
 
-  // Load saved preferences on mount
+  // Load saved preferences and file filters on mount
   useEffect(() => {
     const loadPreferences = async () => {
       try {
@@ -79,8 +88,28 @@ export function FileDrawer({
         console.error('[FileDrawer] Failed to load preferences:', error);
       }
     };
+
+    const loadFileFilters = async () => {
+      try {
+        const settings = await SettingsStorage.getAllFileBrowserSettings();
+        setFileFilters(settings);
+      } catch (error) {
+        console.error('[FileDrawer] Failed to load file filters:', error);
+      }
+    };
+
+    const loadTemplatesDirectory = async () => {
+      try {
+        const dir = await TemplateStorage.getTemplatesDirectory();
+        setTemplatesDirectory(dir);
+      } catch (error) {
+        console.error('[FileDrawer] Failed to load templates directory:', error);
+      }
+    };
     
     loadPreferences();
+    loadFileFilters();
+    loadTemplatesDirectory();
   }, []);
 
   // Save view mode when it changes
@@ -110,6 +139,17 @@ export function FileDrawer({
     setLastUpdated(null);
     setLastLoadedVaultPath(null);
     loadPinnedItems();
+    
+    // Reload templates directory when vault changes
+    const loadTemplatesDir = async () => {
+      try {
+        const dir = await TemplateStorage.getTemplatesDirectory();
+        setTemplatesDirectory(dir);
+      } catch (error) {
+        console.error('[FileDrawer] Failed to reload templates directory:', error);
+      }
+    };
+    loadTemplatesDir();
   }, [vaultPath]);
 
   // Load pinned items
@@ -169,7 +209,7 @@ export function FileDrawer({
 
     setIsLoading(true);
     try {
-      const treeFiles = await FileSystemService.listDirectory(vaultPath);
+      const treeFiles = await FileSystemService.listDirectory(vaultPath, fileFilters);
       console.log('[FileDrawer] Loaded', treeFiles.length, 'root entries');
 
       setFiles(treeFiles);
@@ -181,7 +221,35 @@ export function FileDrawer({
     } finally {
       setIsLoading(false);
     }
-  }, [vaultPath, lastLoadedVaultPath]);
+  }, [vaultPath, lastLoadedVaultPath, fileFilters]);
+
+  // Sync with git and then refresh file list
+  const syncAndRefreshFiles = useCallback(async () => {
+    console.log('[FileDrawer] Refreshing from remote...');
+    
+    setIsLoading(true);
+    try {
+      // First sync with git to pull down any remote changes
+      const repositoryPath = await OnboardingStorage.getActiveRepositoryPath();
+      if (repositoryPath) {
+        try {
+          await GitService.refreshRemote(repositoryPath);
+          console.log('[FileDrawer] Remote refresh completed');
+        } catch (syncError) {
+          console.error('[FileDrawer] Remote refresh failed (will still refresh local files):', syncError);
+          // Don't block file refresh if sync fails
+        }
+      }
+      
+      // Then refresh the file list
+      await loadRootFiles(true);
+      await loadPinnedItems();
+    } catch (error) {
+      console.error('[FileDrawer] Error during sync and refresh:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadRootFiles, loadPinnedItems]);
 
   const loadFlatFiles = useCallback(async (forceRefresh = false) => {
     if (!forceRefresh && flatFiles.length > 0) {
@@ -190,14 +258,14 @@ export function FileDrawer({
 
     setIsLoadingFlat(true);
     try {
-      const flatFileList = await FileSystemService.getFlatFileList(vaultPath);
+      const flatFileList = await FileSystemService.getFlatFileList(vaultPath, fileFilters);
       setFlatFiles(flatFileList);
     } catch (error) {
       console.error('[FileDrawer] Failed to load flat files:', error);
     } finally {
       setIsLoadingFlat(false);
     }
-  }, [vaultPath, flatFiles.length]);
+  }, [vaultPath, flatFiles.length, fileFilters]);
 
   const sortFiles = useCallback((nodes: FileNode[]): FileNode[] => {
     const sorted = [...nodes].sort((a, b) => {
@@ -281,27 +349,91 @@ export function FileDrawer({
   const showPinContextMenu = async (node: FileNode) => {
     const isPinned = await PinningStorage.isPinned(node.path, vaultPath);
     
+    const buttons: any[] = [
+      {
+        text: isPinned ? 'Unpin' : 'Pin',
+        onPress: () => {
+          if (isPinned) {
+            handleUnpinItem(node.path);
+          } else {
+            handlePinItem(node.path, node.name, node.isDirectory);
+          }
+        },
+      },
+    ];
+
+    // Add delete option for files only
+    if (!node.isDirectory) {
+      buttons.push({
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => handleDeleteFile(node),
+      });
+    }
+
+    buttons.push(
+      {
+        text: 'Open',
+        onPress: () => handleFileSelect(node.path),
+      },
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      }
+    );
+    
     Alert.alert(
       node.name,
       undefined,
+      buttons
+    );
+  };
+
+  const handleDeleteFile = (node: FileNode) => {
+    Alert.alert(
+      'Delete File?',
+      `Are you sure you want to delete "${node.name}"? This action cannot be undone.`,
       [
-        {
-          text: isPinned ? 'Unpin' : 'Pin',
-          onPress: () => {
-            if (isPinned) {
-              handleUnpinItem(node.path);
-            } else {
-              handlePinItem(node.path, node.name, node.isDirectory);
-            }
-          },
-        },
-        {
-          text: 'Open',
-          onPress: () => handleFileSelect(node.path),
-        },
         {
           text: 'Cancel',
           style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await FileSystemService.deleteFile(node.path);
+              
+              // If the deleted file was the active file, clear it
+              if (node.path === activeFilePath && onFileSelect) {
+                onFileSelect('');
+              }
+              
+              // Sync with git to push the deletion
+              const repositoryPath = await OnboardingStorage.getActiveRepositoryPath();
+              if (repositoryPath) {
+                try {
+                  // Get the relative path for the deleted file
+                  const relativePath = node.path.replace(repositoryPath, '').replace(/^\/+/, '');
+                  await GitService.sync(repositoryPath, [relativePath]);
+                  console.log('[FileDrawer] File deletion synced to git');
+                } catch (syncError) {
+                  console.error('[FileDrawer] Failed to sync file deletion:', syncError);
+                  // Don't show error to user, deletion succeeded even if sync failed
+                }
+              }
+              
+              // Refresh the file list
+              await loadRootFiles(true);
+              
+              // Also refresh pinned items in case the deleted file was pinned
+              await loadPinnedItems();
+            } catch (error) {
+              console.error('[FileDrawer] Failed to delete file:', error);
+              Alert.alert('Error', 'Failed to delete file');
+            }
+          },
         },
       ]
     );
@@ -313,7 +445,7 @@ export function FileDrawer({
     if (isExpanding && !hasLoadedChildren) {
       setLoadingFolder(path);
       try {
-        const children = await FileSystemService.listDirectory(path);
+        const children = await FileSystemService.listDirectory(path, fileFilters);
         setFiles((prev) => updateNodeChildren(prev, path, children));
       } catch (error) {
         console.error('[FileDrawer] Failed to load folder children:', error);
@@ -347,6 +479,7 @@ export function FileDrawer({
 
     if (node.isDirectory) {
       const isLoadingFolder = loadingFolder === node.path;
+      const isTemplatesFolder = node.name === templatesDirectory;
       
       return (
         <View key={node.path}>
@@ -383,6 +516,13 @@ export function FileDrawer({
             >
               {node.name}
             </Text>
+            {isTemplatesFolder && (
+              <View style={[styles.templatesChip, { backgroundColor: theme.colors.primary + '20' }]}>
+                <Text style={[styles.templatesChipText, { color: theme.colors.primary }]}>
+                  templates
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
           {isExpanded && node.children && (
             <View>
@@ -579,7 +719,7 @@ export function FileDrawer({
               <View style={styles.headerButtons}>
                 <TouchableOpacity
                   style={styles.refreshButton}
-                  onPress={() => loadRootFiles(true)}
+                  onPress={syncAndRefreshFiles}
                   disabled={isLoading}
                   testID="refresh-button"
                 >
@@ -700,7 +840,7 @@ export function FileDrawer({
                   </Text>
                   <TouchableOpacity
                     style={[styles.refreshButtonLarge, { backgroundColor: theme.colors.primary }]}
-                    onPress={() => loadRootFiles(true)}
+                    onPress={syncAndRefreshFiles}
                   >
                     <Text style={[styles.refreshButtonLargeText, { color: theme.colors.background }]}>
                       Refresh
@@ -990,5 +1130,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     flex: 1,
+  },
+  templatesChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  templatesChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });

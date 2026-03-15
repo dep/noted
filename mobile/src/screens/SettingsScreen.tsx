@@ -7,6 +7,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { OnboardingStorage } from '../services/onboardingStorage';
 import { SettingsStorage } from '../services/SettingsStorage';
+import { TemplateStorage } from '../services/TemplateStorage';
 import * as FileSystem from 'expo-file-system/legacy';
 
 type SettingsScreenProps = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -22,10 +23,25 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
   const [dailyNotesFolder, setDailyNotesFolder] = useState('daily');
   const [dailyNotesTemplate, setDailyNotesTemplate] = useState('');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  
+  // Template settings
+  const [templatesDirectory, setTemplatesDirectory] = useState('templates');
+  const [availableTemplates, setAvailableTemplates] = useState<string[]>([]);
+  
+  // File browser settings
+  const [fileExtensionFilter, setFileExtensionFilter] = useState('*.md, *.txt');
+  const [hiddenFileFolderFilter, setHiddenFileFolderFilter] = useState('');
 
   useEffect(() => {
-    OnboardingStorage.getActiveRepositoryPath().then(setRepoPath);
+    OnboardingStorage.getActiveRepositoryPath().then(path => {
+      setRepoPath(path);
+      if (path) {
+        loadAvailableTemplates(templatesDirectory, path);
+      }
+    });
     loadDailyNoteSettings();
+    loadTemplateSettings();
+    loadFileBrowserSettings();
   }, []);
 
   const loadDailyNoteSettings = async () => {
@@ -61,6 +77,56 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
   const handleTemplateChange = async (template: string) => {
     setDailyNotesTemplate(template);
     await SettingsStorage.setDailyNotesTemplate(template);
+  };
+
+  const loadTemplateSettings = async () => {
+    try {
+      const dir = await TemplateStorage.getTemplatesDirectory();
+      setTemplatesDirectory(dir);
+    } catch (error) {
+      console.error('Failed to load template settings:', error);
+    }
+  };
+
+  const handleTemplatesDirectoryChange = async (directory: string) => {
+    setTemplatesDirectory(directory);
+    await TemplateStorage.setTemplatesDirectory(directory);
+    // Reload available templates when directory changes
+    if (repoPath) {
+      loadAvailableTemplates(directory, repoPath);
+    }
+  };
+
+  const loadAvailableTemplates = async (templatesDir: string, vaultPath: string) => {
+    try {
+      await TemplateStorage.setTemplatesDirectory(templatesDir);
+      const templates = await TemplateStorage.getAvailableTemplates(vaultPath);
+      setAvailableTemplates(templates.map(t => t.name));
+    } catch (error) {
+      console.error('Failed to load available templates:', error);
+      setAvailableTemplates([]);
+    }
+  };
+
+  // File browser settings handlers
+  const loadFileBrowserSettings = async () => {
+    try {
+      const settings = await SettingsStorage.getAllFileBrowserSettings();
+      setFileExtensionFilter(settings.fileExtensionFilter);
+      setHiddenFileFolderFilter(settings.hiddenFileFolderFilter);
+    } catch (error) {
+      console.error('Failed to load file browser settings:', error);
+    }
+  };
+
+  const handleFileExtensionFilterChange = async (filter: string) => {
+    setFileExtensionFilter(filter);
+    await SettingsStorage.setFileExtensionFilter(filter);
+  };
+
+  const handleHiddenFileFolderFilterChange = async (filter: string) => {
+    setHiddenFileFolderFilter(filter);
+    await SettingsStorage.setHiddenFileFolderFilter(filter);
   };
 
   const repoName = repoPath
@@ -174,6 +240,62 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
 
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            File Browser
+          </Text>
+
+          <View style={[styles.card, { backgroundColor: theme.colors.card, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 }]}>
+            {/* Show Files Matching */}
+            <View style={styles.inputRow}>
+              <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+                Show Files Matching
+              </Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.background,
+                    borderColor: theme.colors.border,
+                  },
+                ]}
+                value={fileExtensionFilter}
+                onChangeText={handleFileExtensionFilterChange}
+                placeholder="*.md, *.txt"
+                placeholderTextColor={theme.colors.text + '60'}
+              />
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+            {/* Hide Files/Folders Matching */}
+            <View style={styles.inputRow}>
+              <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+                Hide Files/Folders
+              </Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.background,
+                    borderColor: theme.colors.border,
+                  },
+                ]}
+                value={hiddenFileFolderFilter}
+                onChangeText={handleHiddenFileFolderFilterChange}
+                placeholder=".git, .noted"
+                placeholderTextColor={theme.colors.text + '60'}
+              />
+            </View>
+
+            <Text style={[styles.hintText, { color: theme.colors.text, opacity: 0.5 }]}>
+              Filter which files appear in the sidebar. Use commas for multiple patterns or * for all files. Hide matching files/folders with patterns like .git, .noted
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
             Daily Notes
           </Text>
 
@@ -246,33 +368,79 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
 
                 <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
 
-                {/* Template Input */}
+                {/* Template Selection */}
                 <View style={styles.inputRow}>
                   <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
-                    Template File
+                    Template
                   </Text>
-                  <TextInput
+                  <TouchableOpacity
                     style={[
-                      styles.textInput,
-                      {
-                        color: theme.colors.text,
-                        backgroundColor: theme.colors.background,
-                        borderColor: theme.colors.border,
-                      },
+                      styles.dropdownButton,
+                      { backgroundColor: theme.colors.background, borderColor: theme.colors.border }
                     ]}
-                    value={dailyNotesTemplate}
-                    onChangeText={handleTemplateChange}
-                    placeholder="e.g., daily.md"
-                    placeholderTextColor={theme.colors.text + '60'}
-                    editable={!isLoadingSettings}
-                  />
+                    onPress={() => {
+                      if (availableTemplates.length > 0) {
+                        Alert.alert(
+                          'Select Template',
+                          'Choose a template for daily notes',
+                          [
+                            { text: 'None', onPress: () => handleTemplateChange('') },
+                            ...availableTemplates.map(template => ({
+                              text: template,
+                              onPress: () => handleTemplateChange(template),
+                            })),
+                            { text: 'Cancel', style: 'cancel' as const },
+                          ]
+                        );
+                      }
+                    }}
+                  >
+                    <Text style={{ color: theme.colors.text, fontSize: 16 }}>
+                      {dailyNotesTemplate || 'None'}
+                    </Text>
+                    <MaterialIcons name="arrow-drop-down" size={24} color={theme.colors.text} />
+                  </TouchableOpacity>
                 </View>
 
                 <Text style={[styles.hintText, { color: theme.colors.text, opacity: 0.5 }]}>
-                  Place templates in a "templates" folder at your vault root
+                  {availableTemplates.length > 0 
+                    ? "Select a template from your templates folder" 
+                    : "Place templates in the templates folder to select one"}
                 </Text>
               </>
             )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Templates
+          </Text>
+
+          <View style={[styles.card, { backgroundColor: theme.colors.card, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 }]}>
+            <View style={styles.inputRow}>
+              <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+                Templates Folder
+              </Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.background,
+                    borderColor: theme.colors.border,
+                  },
+                ]}
+                value={templatesDirectory}
+                onChangeText={handleTemplatesDirectoryChange}
+                placeholder="templates"
+                placeholderTextColor={theme.colors.text + '60'}
+              />
+            </View>
+
+            <Text style={[styles.hintText, { color: theme.colors.text, opacity: 0.5 }]}>
+              Place .md template files in this folder. Use {'{{year}}'}, {'{{month}}'}, {'{{day}}'}, {'{{hour}}'}, {'{{minute}}'}, {'{{ampm}}'}, {'{{cursor}}'} variables.
+            </Text>
           </View>
         </View>
 
@@ -452,6 +620,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     marginLeft: 12,
+  },
+  pickerContainer: {
+    flex: 1.5,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginLeft: 12,
+    overflow: 'hidden',
+  },
+  dropdownButton: {
+    flex: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginLeft: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   hintText: {
     fontSize: 12,

@@ -25,13 +25,20 @@ jest.mock('../../src/services/onboardingStorage', () => ({
   },
 }));
 
+jest.mock('@react-navigation/native', () => ({
+  useFocusEffect: jest.fn(),
+}));
+
 describe('EditorScreen', () => {
+  const mockNavigate = jest.fn();
+  const mockAddListener = jest.fn(() => jest.fn());
+
   const renderScreen = () =>
     render(
       <ThemeProvider>
         <EditorScreen
           route={{ key: 'Editor', name: 'Editor', params: { filePath: 'file:///vault/repo/note.md' } } as any}
-          navigation={{ navigate: jest.fn() } as any}
+          navigation={{ navigate: mockNavigate, addListener: mockAddListener } as any}
         />
       </ThemeProvider>
     );

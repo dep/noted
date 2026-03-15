@@ -6,9 +6,11 @@ import { useTheme } from '../theme/ThemeContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { FileDrawer } from '../components/FileDrawer';
+import { TemplatePicker } from '../components/TemplatePicker';
 import { FileSystemService } from '../services/FileSystemService';
 import { OnboardingStorage } from '../services/onboardingStorage';
 import { DailyNoteService } from '../services/DailyNoteService';
+import { TemplateStorage } from '../services/TemplateStorage';
 import * as FileSystem from 'expo-file-system/legacy';
 
 type HomeScreenProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
@@ -30,6 +32,7 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [activeFilePath, setActiveFilePath] = useState<string | undefined>(undefined);
   const [repositoryPath, setRepositoryPath] = useState<string>(getVaultPath());
   const [hasOpenedDailyNote, setHasOpenedDailyNote] = useState(false);
+  const [isTemplatePickerVisible, setIsTemplatePickerVisible] = useState(false);
 
   const repoName = repositoryPath
     ? repositoryPath.replace(/\/+$/, '').split('/').pop() || null
@@ -83,21 +86,34 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
     navigation.navigate('Editor', { filePath: path });
   };
 
-  const handleNewNote = async () => {
+  const handleNewNote = () => {
+    // Show template picker instead of creating directly
+    setIsTemplatePickerVisible(true);
+  };
+
+  const handleTemplateSelect = async (templatePath: string | null, noteName: string) => {
+    setIsTemplatePickerVisible(false);
+    
     try {
-      // Generate a unique filename
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `Untitled-${timestamp}.md`;
-      const filePath = `${repositoryPath}/${fileName}`;
-
-      // Create the file with empty content
-      await FileSystemService.writeFile(filePath, '# New Note\n\n');
-
-      // Open the new file in the editor
+      let filePath: string;
+      
+      if (templatePath) {
+        // Create note from template
+        const result = await TemplateStorage.createNoteFromTemplate(
+          templatePath,
+          repositoryPath,
+          noteName
+        );
+        filePath = result.filePath;
+      } else {
+        // Create blank note
+        filePath = await TemplateStorage.createBlankNote(repositoryPath, noteName);
+      }
+      
       setActiveFilePath(filePath);
       navigation.navigate('Editor', { filePath });
     } catch (error) {
-      console.error('Failed to create new note:', error);
+      console.error('Failed to create note:', error);
     }
   };
 
@@ -124,6 +140,7 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
           onClose={handleCloseDrawer}
           onFileSelect={handleFileSelect}
           onNewNote={handleNewNote}
+          onTodayNote={handleTodayNote}
           vaultPath={repositoryPath}
           repoName={repoName}
           activeFilePath={activeFilePath}
@@ -173,6 +190,12 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <TemplatePicker
+        isVisible={isTemplatePickerVisible}
+        onClose={() => setIsTemplatePickerVisible(false)}
+        onSelectTemplate={handleTemplateSelect}
+        vaultPath={repositoryPath}
+      />
     </SafeAreaView>
   );
 }

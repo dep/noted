@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Alert,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -16,6 +18,7 @@ import { GitService } from '../services/gitService';
 import { OnboardingStorage } from '../services/onboardingStorage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { useFocusEffect } from '@react-navigation/native';
 
 const getRelativePath = (root: string, filePath: string) => {
   const normalizedRoot = root.replace(/\/+$/, '');
@@ -84,6 +87,114 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
     }
   };
 
+  // Handle back navigation with unsaved changes
+  const handleBackPress = useCallback(() => {
+    if (hasChanges) {
+      Alert.alert(
+        'Save Changes?',
+        'You have unsaved changes. Would you like to save them before leaving?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => {
+              // Do nothing, stay on the screen
+            },
+          },
+          {
+            text: "Don't Save",
+            style: 'destructive',
+            onPress: () => {
+              setHasChanges(false);
+              navigation.navigate('Home', { openDrawer: true });
+            },
+          },
+          {
+            text: 'Save',
+            style: 'default',
+            onPress: async () => {
+              await handleSave();
+              navigation.navigate('Home', { openDrawer: true });
+            },
+          },
+        ]
+      );
+      return true; // Prevent default back action
+    }
+    return false; // Allow default back action
+  }, [hasChanges, navigation, content, originalContent]);
+
+  // Intercept Android back button
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (hasChanges) {
+          handleBackPress();
+          return true;
+        }
+        navigation.navigate('Home', { openDrawer: true });
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => subscription.remove();
+    }, [hasChanges, handleBackPress, navigation])
+  );
+
+  // Intercept navigation before leaving
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (!hasChanges) {
+        return;
+      }
+
+      // Prevent default behavior
+      e.preventDefault();
+
+      // Show save dialog
+      Alert.alert(
+        'Save Changes?',
+        'You have unsaved changes. Would you like to save them before leaving?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => {
+              // Do nothing, stay on the screen
+            },
+          },
+          {
+            text: "Don't Save",
+            style: 'destructive',
+            onPress: () => {
+              navigation.dispatch(e.data.action);
+            },
+          },
+          {
+            text: 'Save',
+            style: 'default',
+            onPress: async () => {
+              try {
+                await FileSystemService.writeFile(filePath, content);
+                const repositoryPath = await OnboardingStorage.getActiveRepositoryPath();
+                if (repositoryPath) {
+                  await GitService.sync(repositoryPath, [getRelativePath(repositoryPath, filePath)]);
+                }
+                navigation.dispatch(e.data.action);
+              } catch (err) {
+                console.error('Failed to save file:', err);
+                Alert.alert('Error', 'Failed to save file. Staying on screen.');
+              }
+            },
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [navigation, hasChanges, content, filePath, originalContent]);
+
   const getFileName = () => {
     const parts = filePath.split('/');
     return parts[parts.length - 1] || 'Untitled';
@@ -103,7 +214,36 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.navigate('Home', { openDrawer: true })}
+          onPress={() => {
+            if (hasChanges) {
+              Alert.alert(
+                'Save Changes?',
+                'You have unsaved changes. Would you like to save them before leaving?',
+                [
+                  {
+                    text: 'Cancel',
+                    style: 'cancel',
+                  },
+                  {
+                    text: "Don't Save",
+                    style: 'destructive',
+                    onPress: () => {
+                      navigation.navigate('Home', { openDrawer: true });
+                    },
+                  },
+                  {
+                    text: 'Save',
+                    onPress: async () => {
+                      await handleSave();
+                      navigation.navigate('Home', { openDrawer: true });
+                    },
+                  },
+                ]
+              );
+            } else {
+              navigation.navigate('Home', { openDrawer: true });
+            }
+          }}
           testID="back-button"
         >
           <MaterialIcons name="arrow-back" size={28} color={theme.colors.primary} />

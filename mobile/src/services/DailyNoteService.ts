@@ -1,5 +1,6 @@
 import { FileSystemService } from './FileSystemService';
 import { SettingsStorage } from './SettingsStorage';
+import { TemplateStorage } from './TemplateStorage';
 
 export interface DailyNoteResult {
   notePath: string;
@@ -66,19 +67,19 @@ export class DailyNoteService {
       const templateName = (await SettingsStorage.getDailyNotesTemplate()).trim();
       
       if (templateName) {
-        const templatesDir = await this.getTemplatesDirectory(vaultPath);
-        if (templatesDir) {
-          const templatePath = FileSystemService.join(templatesDir, templateName);
-          const templateExists = await FileSystemService.exists(templatePath);
-          
-          if (templateExists) {
-            const templateContent = await FileSystemService.readFile(templatePath) as string;
-            const result = this.applyTemplateVariables(templateContent, date);
-            content = result.content;
-            cursorPosition = result.cursorPosition;
+          const templatesDir = await this.getTemplatesDirectory(vaultPath);
+          if (templatesDir) {
+            const templatePath = FileSystemService.join(templatesDir, templateName);
+            const templateExists = await FileSystemService.exists(templatePath);
+            
+            if (templateExists) {
+              const templateContent = await FileSystemService.readFile(templatePath) as string;
+              const result = TemplateStorage.applyTemplateVariables(templateContent, date);
+              content = result.content;
+              cursorPosition = result.cursorPosition ?? undefined;
+            }
           }
         }
-      }
       
       await FileSystemService.writeFile(notePath, content);
       
@@ -95,9 +96,9 @@ export class DailyNoteService {
     };
   }
 
-  // Get templates directory path (defaults to 'templates' folder in vault root)
+  // Get templates directory path
   private static async getTemplatesDirectory(vaultPath: string): Promise<string | null> {
-    const templatesPath = FileSystemService.join(vaultPath, 'templates');
+    const templatesPath = await TemplateStorage.getTemplatesDirectoryPath(vaultPath);
     const exists = await FileSystemService.exists(templatesPath);
     return exists ? templatesPath : null;
   }

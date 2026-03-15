@@ -30,6 +30,11 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+export interface FileFilterOptions {
+  fileExtensionFilter?: string;  // e.g., "*.md, *.txt"
+  hiddenFileFolderFilter?: string;  // e.g., ".git, .noted"
+}
+
 interface FileSystemEntity {
   name: string;
   isDirectory: boolean;
@@ -118,14 +123,14 @@ export class FileSystemService {
   }
 
   // List only immediate children in a directory
-  async listDirectory(dirPath: string): Promise<FileNode[]> {
+  async listDirectory(dirPath: string, filters?: FileFilterOptions): Promise<FileNode[]> {
     try {
       const normalizedPath = normalizeFileUri(dirPath);
       const entries = await FileSystem.readDirectoryAsync(normalizedPath);
       const files: FileNode[] = [];
 
       for (const entry of entries) {
-        if (entry.startsWith('.') || entry.endsWith('.symlink')) {
+        if (entry.endsWith('.symlink')) {
           continue;
         }
 
@@ -140,6 +145,23 @@ export class FileSystemService {
         }
 
         if (!info.exists) {
+          continue;
+        }
+
+        // Apply hidden file/folder filter
+        if (filters?.hiddenFileFolderFilter && this.shouldHideItem(entry, filters.hiddenFileFolderFilter)) {
+          continue;
+        }
+
+        // For files, apply extension filter
+        if (!info.isDirectory && filters?.fileExtensionFilter !== undefined) {
+          if (!this.shouldShowFile(entry, filters.fileExtensionFilter)) {
+            continue;
+          }
+        }
+
+        // Skip hidden files (starting with .) but allow hidden folders (unless filtered above)
+        if (entry.startsWith('.') && !info.isDirectory && !filters?.hiddenFileFolderFilter?.includes('.')) {
           continue;
         }
 
@@ -158,15 +180,83 @@ export class FileSystemService {
     }
   }
 
+  // Check if item matches hidden patterns
+  private shouldHideItem(name: string, hiddenFilter: string): boolean {
+    if (!hiddenFilter.trim()) return false;
+    
+    const patterns = hiddenFilter
+      .split(',')
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+    
+    if (patterns.length === 0) return false;
+    
+    return patterns.some(pattern => {
+      // Convert glob pattern to regex
+      const regexPattern = '^' + pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
+        .replace(/\*/g, '.*') + '$'; // Convert * to .*
+      
+      try {
+        const regex = new RegExp(regexPattern, 'i');
+        return regex.test(name);
+      } catch {
+        return name.toLowerCase() === pattern.toLowerCase();
+      }
+    });
+  }
+
+  // Check if file should be shown based on extension filter
+  private shouldShowFile(filename: string, extensionFilter: string): boolean {
+    const trimmed = extensionFilter.trim();
+    
+    // Empty or wildcard means show all files
+    if (!trimmed || trimmed === '*') {
+      return true;
+    }
+    
+    const extensions = trimmed
+      .split(',')
+      .map(part => part.trim())
+      .filter(part => part.length > 0)
+      .map(pattern => {
+        // Handle patterns like "*.md" -> extract "md"
+        if (pattern.startsWith('*.')) {
+          return pattern.substring(2).toLowerCase();
+        }
+        // Also accept bare extensions like "md"
+        return pattern.toLowerCase();
+      })
+      .filter(ext => ext.length > 0);
+    
+    // Empty extensions means show all
+    if (extensions.length === 0) {
+      return true;
+    }
+    
+    // Get file extension
+    const lastDotIndex = filename.lastIndexOf('.');
+    if (lastDotIndex === -1) {
+      return false; // No extension, doesn't match
+    }
+    
+    const fileExt = filename.substring(lastDotIndex + 1).toLowerCase();
+    return extensions.includes(fileExt);
+  }
+
   // List files recursively in a directory
-  async listFiles(dirPath: string): Promise<FileNode[]> {
+  async listFiles(dirPath: string, filters?: FileFilterOptions): Promise<FileNode[]> {
     try {
-      const files = await this.listDirectory(dirPath);
+      const files = await this.listDirectory(dirPath, filters);
 
       for (const node of files) {
         if (node.isDirectory) {
+          // Check if this directory should be hidden
+          if (filters?.hiddenFileFolderFilter && this.shouldHideItem(node.name, filters.hiddenFileFolderFilter)) {
+            continue;
+          }
           try {
-            node.children = await this.listFiles(node.path);
+            node.children = await this.listFiles(node.path, filters);
           } catch (error) {
             console.log(`Could not list contents of ${node.name}: ${(error as Error).message}`);
             node.children = [];
@@ -301,11 +391,11 @@ export class FileSystemService {
   }
 
   // Get structured file tree
-  async getFileTree(rootPath: string): Promise<FileNode> {
+  async getFileTree(rootPath: string, filters?: FileFilterOptions): Promise<FileNode> {
     try {
       const normalizedPath = normalizeFileUri(rootPath);
       const name = FileSystemService.basename(normalizedPath);
-      const entries = await this.listFiles(normalizedPath);
+      const entries = await this.listFiles(normalizedPath, filters);
       
       return {
         path: normalizedPath,
@@ -319,14 +409,18 @@ export class FileSystemService {
   }
 
   // Get flat file list (all files without hierarchy)
-  async getFlatFileList(dirPath: string): Promise<FileNode[]> {
+  async getFlatFileList(dirPath: string, filters?: FileFilterOptions): Promise<FileNode[]> {
     const files: FileNode[] = [];
     
     const traverse = async (path: string) => {
-      const entries = await this.listDirectory(path);
+      const entries = await this.listDirectory(path, filters);
       
       for (const entry of entries) {
         if (entry.isDirectory) {
+          // Check if directory should be hidden
+          if (filters?.hiddenFileFolderFilter && this.shouldHideItem(entry.name, filters.hiddenFileFolderFilter)) {
+            continue;
+          }
           await traverse(entry.path);
         } else if (!entry.isDirectory) {
           files.push(entry);
@@ -375,12 +469,12 @@ export class FileSystemService {
   }
 
   // Static wrappers for convenience
-  static async listFiles(dirPath: string): Promise<FileNode[]> {
-    return FileSystemService.getInstance().listFiles(dirPath);
+  static async listFiles(dirPath: string, filters?: FileFilterOptions): Promise<FileNode[]> {
+    return FileSystemService.getInstance().listFiles(dirPath, filters);
   }
 
-  static async listDirectory(dirPath: string): Promise<FileNode[]> {
-    return FileSystemService.getInstance().listDirectory(dirPath);
+  static async listDirectory(dirPath: string, filters?: FileFilterOptions): Promise<FileNode[]> {
+    return FileSystemService.getInstance().listDirectory(dirPath, filters);
   }
 
   static async readFile(filePath: string, encoding?: 'utf8' | 'buffer'): Promise<string | Uint8Array> {
@@ -411,11 +505,11 @@ export class FileSystemService {
     return FileSystemService.getInstance().isDirectory(path);
   }
 
-  static async getFileTree(rootPath: string): Promise<FileNode> {
-    return FileSystemService.getInstance().getFileTree(rootPath);
+  static async getFileTree(rootPath: string, filters?: FileFilterOptions): Promise<FileNode> {
+    return FileSystemService.getInstance().getFileTree(rootPath, filters);
   }
 
-  static async getFlatFileList(dirPath: string): Promise<FileNode[]> {
-    return FileSystemService.getInstance().getFlatFileList(dirPath);
+  static async getFlatFileList(dirPath: string, filters?: FileFilterOptions): Promise<FileNode[]> {
+    return FileSystemService.getInstance().getFlatFileList(dirPath, filters);
   }
 }
