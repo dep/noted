@@ -330,8 +330,9 @@ struct RawEditor: NSViewRepresentable {
             textView.setPlainText(text)
             textView.selectedRanges = selected
             context.coordinator.suppressSync = false
-        } else if !isEditable {
-            // Re-apply preview styling when mode switches without a text change
+        } else if !isEditable || appState.settings.hideMarkdownWhileEditing {
+            // Re-apply preview styling when mode switches without a text change,
+            // or when live-hide-markdown mode is active and the view re-renders.
             textView.applyPreviewStyling()
         }
         textView.onOpenFile = { appState.openFile($0) }
@@ -420,6 +421,9 @@ struct RawEditor: NSViewRepresentable {
                     self.stylingScheduled = false
                     self.suppressSync = true
                     tv.applyMarkdownStyling()
+                    if self.parent.appState.settings.hideMarkdownWhileEditing {
+                        tv.applyPreviewStyling()
+                    }
                     self.suppressSync = false
                 }
             }
@@ -567,12 +571,12 @@ extension LinkAwareTextView {
         storage.beginEditing()
         storage.setAttributedString(NSAttributedString(string: plain))
         storage.endEditing()
-        if isEditable {
-            applyMarkdownStyling()
-        } else {
-            applyMarkdownStyling()
+        applyMarkdownStyling()
+        if !isEditable {
             applyPreviewStyling()
         }
+        // Note: hideMarkdownWhileEditing in editable mode is handled in the
+        // Coordinator's styling callback and updateNSView, which have access to appState.
     }
 
     /// Called after applyMarkdownStyling() in view/preview mode.
@@ -628,14 +632,31 @@ extension LinkAwareTextView {
         hideGroup("(`)((?:[^`\\n])+)(`)", group: 1)
         hideGroup("(`)((?:[^`\\n])+)(`)", group: 3)
 
-        // Fenced code blocks: hide the ``` fences (whole fence line)
-        hide("^```[^\\n]*$", options: [.anchorsMatchLines])
+        // Fenced code blocks: only hide ``` fence lines that form a complete pair.
+        // An unclosed opening fence stays visible so the user knows it's open.
+        let fenceRegex = try? NSRegularExpression(pattern: "^(`{3,})[^\\n]*$", options: [.anchorsMatchLines])
+        var openFenceRanges: [(range: NSRange, marker: String)] = []
+        fenceRegex?.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
+            guard let match else { return }
+            let lineRange = match.range
+            let markerRange = match.range(at: 1)
+            guard lineRange.location != NSNotFound, markerRange.location != NSNotFound else { return }
+            let marker = (text as NSString).substring(with: markerRange)
+            if let openIdx = openFenceRanges.firstIndex(where: { $0.marker == marker }) {
+                // Matched pair — hide both fence lines
+                let openRange = openFenceRanges[openIdx].range
+                storage.addAttributes(hiddenAttrs, range: openRange)
+                storage.addAttributes(hiddenAttrs, range: lineRange)
+                openFenceRanges.remove(at: openIdx)
+            } else {
+                openFenceRanges.append((range: lineRange, marker: marker))
+            }
+        }
+        // Unmatched opening fences are intentionally left visible.
 
         // Blockquote "> " prefix — hide the sigil
         hide("^> ", options: [.anchorsMatchLines])
 
-        // Horizontal rule ---
-        hide("^---$", options: [.anchorsMatchLines])
 
         // Markdown links [label](url) — hide [, ](url) parts, keep label visible
         hideGroup("(\\[)([^\\]]+)(\\]\\([^)]+\\))", group: 1)
@@ -728,8 +749,22 @@ extension LinkAwareTextView {
         applyRegex("`([^`\\n]+)`", to: text, storage: storage) { range in
             storage.addAttributes([.font: MarkdownTheme.mono, .backgroundColor: MarkdownTheme.codeBackground], range: range)
         }
+        let codePad: CGFloat = 10
         applyRegex("```[\\s\\S]*?```", to: text, storage: storage) { range in
             storage.addAttributes([.font: MarkdownTheme.mono, .backgroundColor: MarkdownTheme.codeBackground, .foregroundColor: SynapseTheme.editorForeground], range: range)
+            // Add top padding to the opening fence line and bottom padding to the closing fence line
+            // so the code block has breathing room and the copy button has space to sit in.
+            let nsStr = text as NSString
+            // First line of block → paragraphSpacingBefore
+            let firstLineRange = nsStr.lineRange(for: NSRange(location: range.location, length: 0))
+            let firstParaStyle = NSMutableParagraphStyle()
+            firstParaStyle.paragraphSpacingBefore = codePad
+            storage.addAttribute(.paragraphStyle, value: firstParaStyle, range: firstLineRange)
+            // Last line of block → paragraphSpacing (after)
+            let lastLineRange = nsStr.lineRange(for: NSRange(location: range.location + range.length - 1, length: 0))
+            let lastParaStyle = NSMutableParagraphStyle()
+            lastParaStyle.paragraphSpacing = codePad
+            storage.addAttribute(.paragraphStyle, value: lastParaStyle, range: lastLineRange)
         }
         applyRegex("^> .+$", to: text, storage: storage, options: [.anchorsMatchLines]) { range in
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
@@ -1301,7 +1336,8 @@ class LinkAwareTextView: NSTextView {
     }
 
     override func insertNewline(_ sender: Any?) {
-        // Preserve the leading whitespace of the current line on the new line.
+        // Preserve the leading whitespace of the current line on the new line,
+        // and continue bullet lists (- or *) automatically.
         let cursor = selectedRange().location
         let nsText = string as NSString
         guard cursor != NSNotFound else { super.insertNewline(sender); return }
@@ -1309,23 +1345,90 @@ class LinkAwareTextView: NSTextView {
         // Find the start of the current line.
         let lineRange = nsText.lineRange(for: NSRange(location: cursor, length: 0))
         let lineText = nsText.substring(with: lineRange)
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "\r", with: "")
 
-        // Measure leading whitespace (spaces or tabs only).
+        // Measure leading whitespace.
         var indentEnd = lineText.startIndex
         for ch in lineText {
-            if ch == " " || ch == "\t" {
-                indentEnd = lineText.index(after: indentEnd)
-            } else {
+            if ch == " " || ch == "\t" { indentEnd = lineText.index(after: indentEnd) }
+            else { break }
+        }
+        let indent = String(lineText[lineText.startIndex..<indentEnd])
+        let afterIndent = String(lineText[indentEnd...])
+
+        // Detect bullet marker: "- " or "* " (unordered list items).
+        // Also handle "- [ ] " and "- [x] " task list items.
+        let bulletMarkers = ["- [ ] ", "- [x] ", "- [X] ", "* [ ] ", "* [x] ", "* [X] ", "- ", "* "]
+        var detectedMarker: String? = nil
+        for marker in bulletMarkers {
+            if afterIndent.hasPrefix(marker) {
+                detectedMarker = marker
                 break
             }
         }
-        let indent = String(lineText[lineText.startIndex..<indentEnd])
+
+        // Detect ordered list: "1. ", "2. ", etc.
+        if detectedMarker == nil {
+            let orderedRegex = try? NSRegularExpression(pattern: #"^(\d+)\. "#)
+            let afterIndentNS = afterIndent as NSString
+            if let match = orderedRegex?.firstMatch(in: afterIndent, range: NSRange(location: 0, length: afterIndentNS.length)) {
+                let numberRange = match.range(at: 1)
+                let currentNumber = Int(afterIndentNS.substring(with: numberRange)) ?? 1
+                let markerLength = match.range(at: 0).length
+                let itemContent = String(afterIndent.dropFirst(markerLength))
+
+                if itemContent.trimmingCharacters(in: .whitespaces).isEmpty {
+                    // Empty ordered item — remove it and break out of the list.
+                    let deletionRange = NSRange(location: lineRange.location, length: cursor - lineRange.location)
+                    if shouldChangeText(in: deletionRange, replacementString: "") {
+                        replaceCharacters(in: deletionRange, with: "")
+                        didChangeText()
+                    }
+                    super.insertNewline(sender)
+                    return
+                }
+
+                super.insertNewline(sender)
+                insertText(indent + "\(currentNumber + 1). ", replacementRange: selectedRange())
+                return
+            }
+        }
+
+        guard let marker = detectedMarker else {
+            // No bullet — just continue with indent as before.
+            super.insertNewline(sender)
+            if !indent.isEmpty { insertText(indent, replacementRange: selectedRange()) }
+            return
+        }
+
+        let bulletContent = String(afterIndent.dropFirst(marker.count))
+
+        // If the bullet line is empty (user pressed enter on a blank bullet),
+        // remove the bullet and insert a plain newline instead.
+        if bulletContent.trimmingCharacters(in: .whitespaces).isEmpty {
+            // Delete back to the start of the bullet line and insert a bare newline.
+            let deletionRange = NSRange(location: lineRange.location, length: cursor - lineRange.location)
+            if shouldChangeText(in: deletionRange, replacementString: "") {
+                replaceCharacters(in: deletionRange, with: "")
+                didChangeText()
+            }
+            super.insertNewline(sender)
+            return
+        }
+
+        // Otherwise continue the list: new line with same indent + same marker.
+        // For task items, always start unchecked.
+        let continuationMarker: String
+        if marker.hasPrefix("- [") || marker.hasPrefix("* [") {
+            let bulletChar = marker.hasPrefix("-") ? "-" : "*"
+            continuationMarker = "\(bulletChar) [ ] "
+        } else {
+            continuationMarker = marker
+        }
 
         super.insertNewline(sender)
-
-        if !indent.isEmpty {
-            insertText(indent, replacementRange: selectedRange())
-        }
+        insertText(indent + continuationMarker, replacementRange: selectedRange())
     }
 
     override func keyDown(with event: NSEvent) {
@@ -2864,14 +2967,19 @@ extension LinkAwareTextView {
         
         let buttonSize: CGFloat = 24
         let buttonMargin: CGFloat = 8
-        
+        let minBlockHeight = buttonSize + buttonMargin * 2
+
         for match in matches {
             // Get the rect of the code block
             let glyphRange = layoutManager.glyphRange(forCharacterRange: match.range, actualCharacterRange: nil)
             var codeBlockRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
             codeBlockRect.origin.x += textContainerOrigin.x
             codeBlockRect.origin.y += textContainerOrigin.y
-            
+            // Guarantee enough height for the button even on very short blocks
+            if codeBlockRect.height < minBlockHeight {
+                codeBlockRect.size.height = minBlockHeight
+            }
+
             // Position button at top-right corner
             let buttonX = codeBlockRect.maxX - buttonSize - buttonMargin
             let buttonY = codeBlockRect.minY + buttonMargin

@@ -24,6 +24,23 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            // MARK: - Editor Section
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Hide markdown while editing", isOn: $settings.hideMarkdownWhileEditing)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+
+                    Text("When enabled, markdown syntax is hidden as you type and content renders in real-time. The preview toolbar button is hidden in this mode.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Editor")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+            }
+
             // MARK: - On-Boot Command Section
             Section {
                 VStack(alignment: .leading, spacing: 10) {

@@ -87,6 +87,9 @@ class SettingsManager: ObservableObject {
     @Published var defaultEditMode: Bool {
         didSet { save() }
     }
+    @Published var hideMarkdownWhileEditing: Bool {
+        didSet { save() }
+    }
 
     var hasGitHubPAT: Bool {
         !githubPAT.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -125,6 +128,7 @@ class SettingsManager: ObservableObject {
         var fileTreeMode: String?
         var pinnedItems: [PinnedItem]?
         var defaultEditMode: Bool?
+        var hideMarkdownWhileEditing: Bool?
 
         init(
             onBootCommand: String,
@@ -145,7 +149,8 @@ class SettingsManager: ObservableObject {
             githubPAT: String?,
             fileTreeMode: String?,
             pinnedItems: [PinnedItem]?,
-            defaultEditMode: Bool?
+            defaultEditMode: Bool?,
+            hideMarkdownWhileEditing: Bool?
         ) {
             self.onBootCommand = onBootCommand
             self.fileExtensionFilter = fileExtensionFilter
@@ -166,6 +171,7 @@ class SettingsManager: ObservableObject {
             self.fileTreeMode = fileTreeMode
             self.pinnedItems = pinnedItems
             self.defaultEditMode = defaultEditMode
+            self.hideMarkdownWhileEditing = hideMarkdownWhileEditing
         }
 
         init(from decoder: Decoder) throws {
@@ -189,6 +195,7 @@ class SettingsManager: ObservableObject {
             fileTreeMode = try container.decodeIfPresent(String.self, forKey: .fileTreeMode)
             pinnedItems = try container.decodeIfPresent([PinnedItem].self, forKey: .pinnedItems)
             defaultEditMode = try container.decodeIfPresent(Bool.self, forKey: .defaultEditMode)
+            hideMarkdownWhileEditing = try container.decodeIfPresent(Bool.self, forKey: .hideMarkdownWhileEditing)
         }
     }
 
@@ -206,6 +213,7 @@ class SettingsManager: ObservableObject {
         var autoPush: Bool
         var pinnedItems: [PinnedItem]?
         var defaultEditMode: Bool?
+        var hideMarkdownWhileEditing: Bool?
 
         init(
             onBootCommand: String,
@@ -219,7 +227,8 @@ class SettingsManager: ObservableObject {
             autoSave: Bool,
             autoPush: Bool,
             pinnedItems: [PinnedItem]?,
-            defaultEditMode: Bool?
+            defaultEditMode: Bool?,
+            hideMarkdownWhileEditing: Bool?
         ) {
             self.onBootCommand = onBootCommand
             self.fileExtensionFilter = fileExtensionFilter
@@ -233,6 +242,7 @@ class SettingsManager: ObservableObject {
             self.autoPush = autoPush
             self.pinnedItems = pinnedItems
             self.defaultEditMode = defaultEditMode
+            self.hideMarkdownWhileEditing = hideMarkdownWhileEditing
         }
 
         init(from decoder: Decoder) throws {
@@ -249,6 +259,7 @@ class SettingsManager: ObservableObject {
             autoPush = try container.decodeIfPresent(Bool.self, forKey: .autoPush) ?? false
             pinnedItems = try container.decodeIfPresent([PinnedItem].self, forKey: .pinnedItems)
             defaultEditMode = try container.decodeIfPresent(Bool.self, forKey: .defaultEditMode)
+            hideMarkdownWhileEditing = try container.decodeIfPresent(Bool.self, forKey: .hideMarkdownWhileEditing)
         }
     }
 
@@ -317,6 +328,7 @@ class SettingsManager: ObservableObject {
             self.fileTreeMode = FileTreeMode(rawValue: config.fileTreeMode ?? "") ?? .folder
             self.pinnedItems = config.pinnedItems ?? []
             self.defaultEditMode = config.defaultEditMode ?? true
+            self.hideMarkdownWhileEditing = config.hideMarkdownWhileEditing ?? false
         } else {
             self.onBootCommand = ""
             self.fileExtensionFilter = "*.md, *.txt"
@@ -337,6 +349,7 @@ class SettingsManager: ObservableObject {
             self.fileTreeMode = .folder
             self.pinnedItems = []
             self.defaultEditMode = true
+            self.hideMarkdownWhileEditing = false
         }
     }
 
@@ -386,6 +399,7 @@ class SettingsManager: ObservableObject {
                 self.autoPush = vaultConfig.autoPush
                 self.pinnedItems = vaultConfig.pinnedItems ?? []
                 self.defaultEditMode = vaultConfig.defaultEditMode ?? true
+                self.hideMarkdownWhileEditing = vaultConfig.hideMarkdownWhileEditing ?? false
             } else {
                 // No vault config exists yet - use defaults
                 self.onBootCommand = ""
@@ -400,6 +414,7 @@ class SettingsManager: ObservableObject {
                 self.autoPush = false
                 self.pinnedItems = []
                 self.defaultEditMode = true
+                self.hideMarkdownWhileEditing = false
             }
 
             self.leftSidebarPanes = [.files, .tags, .links]
@@ -442,6 +457,7 @@ class SettingsManager: ObservableObject {
             self.fileTreeMode = .folder
             self.pinnedItems = []
             self.defaultEditMode = true
+            self.hideMarkdownWhileEditing = false
         }
     }
 
@@ -566,7 +582,8 @@ class SettingsManager: ObservableObject {
                 githubPAT: githubPAT.isEmpty ? nil : githubPAT,
                 fileTreeMode: fileTreeMode.rawValue,
                 pinnedItems: pinnedItems.isEmpty ? nil : pinnedItems,
-                defaultEditMode: defaultEditMode
+                defaultEditMode: defaultEditMode,
+                hideMarkdownWhileEditing: hideMarkdownWhileEditing ? true : nil
             )
             let encoder = Self.makePrettyJSONEncoder()
             guard let data = try? encoder.encode(config) else { return }
@@ -588,7 +605,8 @@ class SettingsManager: ObservableObject {
                 autoSave: autoSave,
                 autoPush: autoPush,
                 pinnedItems: pinnedItems.isEmpty ? nil : pinnedItems,
-                defaultEditMode: defaultEditMode
+                defaultEditMode: defaultEditMode,
+                hideMarkdownWhileEditing: hideMarkdownWhileEditing ? true : nil
             )
 
             // Save vault-specific settings to .noted/settings.yml

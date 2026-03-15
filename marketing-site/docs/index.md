@@ -26,10 +26,14 @@ Once your vault is opened, consider configuring the following:
 
 ## Features
 
+![](images/hero-2.png)
+
 Synapse packs a robust set of features to boost your productivity.
 
 ### Markdown Editor
 - **Live Styling:** Write in plain text, but see bold, italics, links, and code blocks styled live.
+- **Preview Mode:** Toggle a clean rendered view that hides markdown syntax (`⌘⇧P`). The eye icon in the toolbar activates it.
+- **Hide Markdown While Editing:** Enable in Settings → Editor to keep syntax hidden as you type — a distraction-free writing mode with real-time rendering.
 - **Slash Commands:** Type `/time`, `/date`, `/todo`, or `/note` at the start of a line or after a space — expands instantly as you type.
 - **Wikilinks:** Easily link to other notes using `[[Note Name]]`.
 - **Embedded Notes:** Include other notes directly using `![[Note Name]]`.
@@ -156,3 +160,4 @@ Synapse relies heavily on keyboard shortcuts to help you navigate and edit quick
 | --- | --- |
 | Open Global Graph | `CMD + SHIFT + G` |
 | Open Today's Note | `CTRL + CMD + H` |
+| Toggle Preview Mode | `CMD + SHIFT + P` |

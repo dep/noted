@@ -134,6 +134,8 @@ Artifacts:
 
 ### Core Editing
 - **Live Markdown Styling** - See bold, italics, links, and code blocks styled as you type
+- **Preview Mode** - Toggle a rendered preview that hides markdown syntax (`⌘⇧P`)
+- **Hide Markdown While Editing** - Optional mode (Settings → Editor) where syntax is hidden in real-time as you type, keeping the writing surface clean without switching modes
 - **Slash Commands** - Type `/time`, `/date`, `/todo`, or `/note` at the start of a line or after a space to insert content inline
 - **Wiki Links** - Link to other notes using `[[Note Name]]` syntax with automatic backlink tracking
 - **Embeddable Notes** - Include other notes inline using `![[Note Name]]` syntax
@@ -263,6 +265,7 @@ Type a slash command at the start of a line or after a space — it expands auto
 | Open Global Graph | `⇧⌘G` |
 | Open Today's Note | `⌃⌘H` |
 | Toggle Sidebar | Click sidebar icons |
+| Toggle Preview Mode | `⌘⇧P` |
 
 ## Markdown Guide
 
