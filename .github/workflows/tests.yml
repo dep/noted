@@ -79,7 +79,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./mobile
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Run mobile tests
         working-directory: ./mobile
