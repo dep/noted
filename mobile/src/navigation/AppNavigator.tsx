@@ -6,6 +6,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { CloneRepositoryScreen } from '../screens/CloneRepositoryScreen';
 import { EditorScreen } from '../screens/EditorScreen';
+import { GitHubTokenScreen } from '../screens/GitHubTokenScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { OnboardingStorage } from '../services/onboardingStorage';
 
@@ -15,6 +16,7 @@ export type RootStackParamList = {
   Onboarding: undefined;
   CloneRepository: undefined;
   Editor: { filePath: string };
+  GitHubToken: { nextStep?: string } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -68,6 +70,11 @@ export function AppNavigator() {
               options={{ headerShown: false }}
             />
             <Stack.Screen 
+              name="GitHubToken" 
+              component={GitHubTokenScreen} 
+              options={{ title: 'Connect to GitHub', headerShown: true }}
+            />
+            <Stack.Screen 
               name="Home" 
               component={HomeScreen} 
               options={{ title: 'Synapse' }}
@@ -89,6 +96,11 @@ export function AppNavigator() {
               name="Onboarding" 
               component={OnboardingScreen} 
               options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="GitHubToken" 
+              component={GitHubTokenScreen} 
+              options={{ title: 'Connect to GitHub', headerShown: true }}
             />
             <Stack.Screen 
               name="CloneRepository" 
