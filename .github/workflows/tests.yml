@@ -65,3 +65,26 @@ jobs:
         with:
           name: test-results
           path: test-results.xml
+
+  mobile-tests:
+    name: Mobile Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./mobile
+        run: npm ci
+
+      - name: Run mobile tests
+        working-directory: ./mobile
+        run: npm test
