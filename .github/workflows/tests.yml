@@ -34,12 +34,12 @@ jobs:
           if ! command -v xcodegen &> /dev/null; then
             brew install xcodegen
           fi
-          xcodegen generate
+          cd macOS && xcodegen generate
 
       - name: Resolve Swift packages
         run: |
           xcodebuild -resolvePackageDependencies \
-            -project Synapse.xcodeproj \
+            -project macOS/Synapse.xcodeproj \
             -scheme Synapse
 
       - name: Install xcpretty
@@ -49,7 +49,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test \
-            -project Synapse.xcodeproj \
+            -project macOS/Synapse.xcodeproj \
             -scheme Synapse \
             -destination 'platform=macOS' \
             CODE_SIGN_IDENTITY="" \
