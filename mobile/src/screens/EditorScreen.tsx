@@ -860,9 +860,16 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
               autoFocus
             />
             {searchMatches.length > 0 && (
-              <Text style={[styles.matchCounter, { color: theme.colors.text }]}>
-                {currentMatchIndex + 1} of {searchMatches.length}
-              </Text>
+              <View style={styles.matchInfoContainer}>
+                <Text style={[styles.matchCounter, { color: theme.colors.text }]}>
+                  {currentMatchIndex + 1} of {searchMatches.length}
+                </Text>
+                {currentMatchIndex >= 0 && searchMatches[currentMatchIndex] && (
+                  <Text style={[styles.matchLineInfo, { color: theme.colors.text + '80' }]}>
+                    Line {searchMatches[currentMatchIndex].line + 1}
+                  </Text>
+                )}
+              </View>
             )}
             <TouchableOpacity onPress={goToPrevMatch} disabled={searchMatches.length === 0} testID="search-prev-button">
               <MaterialIcons name="keyboard-arrow-up" size={24} color={searchMatches.length > 0 ? theme.colors.text : theme.colors.text + '40'} />
@@ -1173,5 +1180,14 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     minWidth: 50,
     textAlign: 'center',
+  },
+  matchInfoContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matchLineInfo: {
+    fontSize: 11,
+    marginTop: 2,
   },
 });
