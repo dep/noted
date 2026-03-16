@@ -88,6 +88,17 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
     setIsLoading(true);
     setError(null);
     try {
+      // Get repository path and pull latest changes before opening file
+      const repositoryPath = await OnboardingStorage.getActiveRepositoryPath();
+      if (repositoryPath) {
+        try {
+          await GitService.pull(repositoryPath);
+        } catch (pullErr) {
+          // Log pull error but don't block file opening
+          console.warn('Git pull failed, opening local version:', pullErr);
+        }
+      }
+      
       const fileContent = await FileSystemService.readFile(filePath);
       setContent(fileContent);
       setOriginalContent(fileContent);
