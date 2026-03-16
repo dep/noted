@@ -79,6 +79,7 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
   const [filteredNotes, setFilteredNotes] = useState<FileNode[]>([]);
   const [wikilinkStartPos, setWikilinkStartPos] = useState<number | null>(null);
   const textInputRef = React.useRef<TextInput>(null);
+  const editorScrollRef = React.useRef<ScrollView>(null);
   const shouldRestoreEditorFocusRef = React.useRef(false);
   const hasChangesRef = React.useRef(false);
   
@@ -335,12 +336,26 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
 
   const goToNextMatch = () => {
     if (searchMatches.length === 0) return;
-    setCurrentMatchIndex((prev) => (prev + 1) % searchMatches.length);
+    const newIndex = (currentMatchIndex + 1) % searchMatches.length;
+    setCurrentMatchIndex(newIndex);
+    scrollToMatch(newIndex);
   };
 
   const goToPrevMatch = () => {
     if (searchMatches.length === 0) return;
-    setCurrentMatchIndex((prev) => (prev - 1 + searchMatches.length) % searchMatches.length);
+    const newIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+    setCurrentMatchIndex(newIndex);
+    scrollToMatch(newIndex);
+  };
+
+  const scrollToMatch = (matchIndex: number) => {
+    if (matchIndex < 0 || matchIndex >= searchMatches.length || !editorScrollRef.current) return;
+    
+    const match = searchMatches[matchIndex];
+    const lineHeight = 26; // Approximate line height
+    const scrollPosition = match.line * lineHeight;
+    
+    editorScrollRef.current.scrollTo({ y: scrollPosition, animated: true });
   };
 
   // Handle back navigation with unsaved changes
@@ -906,28 +921,48 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
           </ScrollView>
         ) : (
           // Edit Mode
-          <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
-            <TextInput
-              testID="editor-input"
-              ref={textInputRef}
-              style={[
-                styles.editor,
-                {
-                  color: theme.colors.text,
-                  backgroundColor: theme.colors.card,
-                },
-              ]}
-              multiline
-              value={content}
-              onChangeText={handleContentChange}
-              placeholder="Start typing..."
-              placeholderTextColor={theme.colors.text + '60'}
-              textAlignVertical="top"
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
-              undoEnabled={true}
-            />
+          <ScrollView 
+            style={styles.content} 
+            keyboardShouldPersistTaps="handled"
+            ref={editorScrollRef}
+          >
+            <View style={styles.editorContainer}>
+              {/* Line Numbers with Search Highlight */}
+              {isSearchOpen && searchMatches.length > 0 && currentMatchIndex >= 0 && (
+                <View style={styles.lineHighlightOverlay}>
+                  <View 
+                    style={[
+                      styles.activeMatchLine,
+                      { 
+                        backgroundColor: theme.colors.primary + '30',
+                        top: searchMatches[currentMatchIndex].line * 26 + 20, // Approximate line height
+                      }
+                    ]} 
+                  />
+                </View>
+              )}
+              <TextInput
+                testID="editor-input"
+                ref={textInputRef}
+                style={[
+                  styles.editor,
+                  {
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.card,
+                  },
+                ]}
+                multiline
+                value={content}
+                onChangeText={handleContentChange}
+                placeholder="Start typing..."
+                placeholderTextColor={theme.colors.text + '60'}
+                textAlignVertical="top"
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                undoEnabled={true}
+              />
+            </View>
           </ScrollView>
         )}
       </KeyboardAvoidingView>
@@ -1189,5 +1224,25 @@ const styles = StyleSheet.create({
   matchLineInfo: {
     fontSize: 11,
     marginTop: 2,
+  },
+  editorContainer: {
+    position: 'relative',
+    minHeight: '100%',
+  },
+  lineHighlightOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    pointerEvents: 'none',
+    zIndex: 1,
+  },
+  activeMatchLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 26, // Line height
+    borderRadius: 4,
   },
 });
