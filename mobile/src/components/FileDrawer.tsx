@@ -345,6 +345,13 @@ export function FileDrawer({
         }
       }
 
+      // Sort results by file modified date (descending - most recent first)
+      results.sort((a, b) => {
+        const dateA = a.file.modifiedAt?.getTime() || 0;
+        const dateB = b.file.modifiedAt?.getTime() || 0;
+        return dateB - dateA;
+      });
+
       setSearchResults(results);
     } catch (error) {
       console.error('[FileDrawer] Search error:', error);
