@@ -205,6 +205,29 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
           Your mobile workspace for notes and ideas
         </Text>
 
+        {/* Action Buttons */}
+        <View style={[styles.section, { backgroundColor: theme.colors.card, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 }]}>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.colors.secondary }]}
+            onPress={handleNewNote}
+          >
+            <MaterialIcons name="note-add" size={20} color={theme.colors.background} style={{ marginRight: 8 }} />
+            <Text style={[styles.buttonText, { color: theme.colors.background }]}>
+              Create New Note
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.colors.primary, marginTop: 12 }]}
+            onPress={handleTodayNote}
+          >
+            <MaterialIcons name="today" size={20} color={theme.colors.background} style={{ marginRight: 8 }} />
+            <Text style={[styles.buttonText, { color: theme.colors.background }]}>
+              Today's Note
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Pinned Items Section */}
         {pinnedItems.length > 0 && (
           <View style={[styles.pinnedSection, { backgroundColor: theme.colors.card, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 }]}>
@@ -235,28 +258,6 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
             </View>
           </View>
         )}
-
-        <View style={[styles.section, { backgroundColor: theme.colors.card, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 }]}>
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: theme.colors.secondary }]}
-            onPress={handleNewNote}
-          >
-            <MaterialIcons name="note-add" size={20} color={theme.colors.background} style={{ marginRight: 8 }} />
-            <Text style={[styles.buttonText, { color: theme.colors.background }]}>
-              Create New Note
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: theme.colors.primary, marginTop: 12 }]}
-            onPress={handleTodayNote}
-          >
-            <MaterialIcons name="today" size={20} color={theme.colors.background} style={{ marginRight: 8 }} />
-            <Text style={[styles.buttonText, { color: theme.colors.background }]}>
-              Today's Note
-            </Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
       <TemplatePicker
         isVisible={isTemplatePickerVisible}
