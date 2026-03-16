@@ -926,21 +926,74 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
             keyboardShouldPersistTaps="handled"
             ref={editorScrollRef}
           >
-            <View style={styles.editorContainer}>
-              {/* Line Numbers with Search Highlight */}
-              {isSearchOpen && searchMatches.length > 0 && currentMatchIndex >= 0 && (
-                <View style={styles.lineHighlightOverlay}>
-                  <View 
-                    style={[
-                      styles.activeMatchLine,
-                      { 
-                        backgroundColor: theme.colors.primary + '30',
-                        top: searchMatches[currentMatchIndex].line * 26 + 20, // Approximate line height
-                      }
-                    ]} 
-                  />
-                </View>
-              )}
+            {isSearchOpen && searchMatches.length > 0 ? (
+              // Search Mode - Show highlighted text
+              <View style={styles.searchableEditor}>
+                {content.split('\n').map((line, lineIndex) => {
+                  // Find matches on this line
+                  const lineMatches = searchMatches.filter(m => m.line === lineIndex);
+                  
+                  if (lineMatches.length === 0) {
+                    return (
+                      <Text key={lineIndex} style={[styles.searchLine, { color: theme.colors.text }]}>
+                        {line || ' '}
+                      </Text>
+                    );
+                  }
+                  
+                  // Build highlighted line
+                  const parts: JSX.Element[] = [];
+                  let lastEnd = 0;
+                  const isActiveLine = lineIndex === searchMatches[currentMatchIndex]?.line;
+                  
+                  lineMatches.forEach((match, idx) => {
+                    // Text before match
+                    if (match.start > lastEnd) {
+                      parts.push(
+                        <Text key={`before-${idx}`} style={{ color: theme.colors.text }}>
+                          {line.substring(lastEnd, match.start)}
+                        </Text>
+                      );
+                    }
+                    
+                    // Highlighted match text
+                    const isActiveMatch = lineIndex === searchMatches[currentMatchIndex].line && 
+                                         match.start === searchMatches[currentMatchIndex].start;
+                    parts.push(
+                      <Text 
+                        key={`match-${idx}`} 
+                        style={{
+                          backgroundColor: isActiveMatch ? theme.colors.primary : theme.colors.primary + '60',
+                          color: theme.colors.background,
+                          borderRadius: 2,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {line.substring(match.start, match.end)}
+                      </Text>
+                    );
+                    
+                    lastEnd = match.end;
+                  });
+                  
+                  // Text after last match
+                  if (lastEnd < line.length) {
+                    parts.push(
+                      <Text key="after" style={{ color: theme.colors.text }}>
+                        {line.substring(lastEnd)}
+                      </Text>
+                    );
+                  }
+                  
+                  return (
+                    <Text key={lineIndex} style={styles.searchLine}>
+                      {parts.length > 0 ? parts : ' '}
+                    </Text>
+                  );
+                })}
+              </View>
+            ) : (
+              // Normal Edit Mode
               <TextInput
                 testID="editor-input"
                 ref={textInputRef}
@@ -962,7 +1015,7 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
                 spellCheck={false}
                 undoEnabled={true}
               />
-            </View>
+            )}
           </ScrollView>
         )}
       </KeyboardAvoidingView>
@@ -1225,24 +1278,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-  editorContainer: {
-    position: 'relative',
+  searchableEditor: {
+    padding: 20,
     minHeight: '100%',
   },
-  lineHighlightOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    pointerEvents: 'none',
-    zIndex: 1,
-  },
-  activeMatchLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 26, // Line height
-    borderRadius: 4,
+  searchLine: {
+    fontSize: 16,
+    lineHeight: 26,
+    fontFamily: 'monospace',
+    flexWrap: 'wrap',
   },
 });
