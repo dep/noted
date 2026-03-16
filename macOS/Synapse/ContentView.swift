@@ -165,6 +165,9 @@ struct ContentView: View {
                 Button("") { appState.splitHorizontally() }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                     .hidden()
+                Button("") { appState.settings.hideMarkdownWhileEditing.toggle() }
+                    .keyboardShortcut("e", modifiers: .command)
+                    .hidden()
                 Button("") {
                     if let orientation = appState.splitOrientation {
                         if orientation == .vertical { appState.switchToOtherPane() }
