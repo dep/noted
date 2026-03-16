@@ -11,6 +11,7 @@ import { FileSystemService } from '../services/FileSystemService';
 import { OnboardingStorage } from '../services/onboardingStorage';
 import { DailyNoteService } from '../services/DailyNoteService';
 import { TemplateStorage } from '../services/TemplateStorage';
+import { PinningStorage, PinnedItem } from '../services/PinningStorage';
 import * as FileSystem from 'expo-file-system/legacy';
 
 type HomeScreenProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
@@ -35,6 +36,7 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [isTemplatePickerVisible, setIsTemplatePickerVisible] = useState(false);
   const [isNewFolderDialogVisible, setIsNewFolderDialogVisible] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [pinnedItems, setPinnedItems] = useState<PinnedItem[]>([]);
 
   const repoName = repositoryPath
     ? repositoryPath.replace(/\/+$/, '').split('/').pop() || null
@@ -50,6 +52,21 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
 
     loadRepositoryPath();
   }, []);
+
+  // Load pinned items when repository path changes
+  useEffect(() => {
+    const loadPinnedItems = async () => {
+      if (!repositoryPath) return;
+      try {
+        const items = await PinningStorage.getPinnedItems(repositoryPath);
+        setPinnedItems(items);
+      } catch (error) {
+        console.error('Failed to load pinned items:', error);
+      }
+    };
+
+    loadPinnedItems();
+  }, [repositoryPath]);
 
   // Open daily note on startup if enabled
   useEffect(() => {
@@ -188,6 +205,7 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
           Your mobile workspace for notes and ideas
         </Text>
 
+        {/* Action Buttons */}
         <View style={[styles.section, { backgroundColor: theme.colors.card, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 }]}>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: theme.colors.secondary }]}
@@ -209,6 +227,37 @@ export function HomeScreen({ navigation, route }: HomeScreenProps) {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Pinned Items Section */}
+        {pinnedItems.length > 0 && (
+          <View style={[styles.pinnedSection, { backgroundColor: theme.colors.card, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 }]}>
+            <View style={styles.pinnedHeader}>
+              <MaterialIcons name="push-pin" size={18} color={theme.colors.primary} />
+              <Text style={[styles.pinnedTitle, { color: theme.colors.text }]}>
+                Pinned
+              </Text>
+            </View>
+            <View style={styles.pinnedList}>
+              {pinnedItems.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.pinnedItem, { borderBottomColor: theme.colors.border }]}
+                  onPress={() => handleFileSelect(item.path)}
+                >
+                  <MaterialIcons 
+                    name={item.isFolder ? "folder" : "description"} 
+                    size={18} 
+                    color={theme.colors.primary} 
+                  />
+                  <Text style={[styles.pinnedItemText, { color: theme.colors.text }]} numberOfLines={1}>
+                    {item.name.replace(/\.md$/, '')}
+                  </Text>
+                  <MaterialIcons name="chevron-right" size={20} color={theme.colors.text + '40'} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
       </ScrollView>
       <TemplatePicker
         isVisible={isTemplatePickerVisible}
@@ -430,5 +479,37 @@ const styles = StyleSheet.create({
   dialogCreateText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  pinnedSection: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  pinnedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  pinnedTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  pinnedList: {
+    flexDirection: 'column',
+  },
+  pinnedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    gap: 10,
+  },
+  pinnedItemText: {
+    fontSize: 15,
+    fontWeight: '500',
+    flex: 1,
   },
 });

@@ -79,11 +79,18 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
   const [filteredNotes, setFilteredNotes] = useState<FileNode[]>([]);
   const [wikilinkStartPos, setWikilinkStartPos] = useState<number | null>(null);
   const textInputRef = React.useRef<TextInput>(null);
+  const editorScrollRef = React.useRef<ScrollView>(null);
   const shouldRestoreEditorFocusRef = React.useRef(false);
   const hasChangesRef = React.useRef(false);
   
   // Navigation history for back button support
   const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
+  
+  // In-file search state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatches, setSearchMatches] = useState<{ line: number; start: number; end: number; text: string }[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
   useEffect(() => {
     loadFile();
@@ -279,6 +286,100 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
     setWikilinkStartPos(null);
     setWikilinkSearch('');
     setFilteredNotes([]);
+  };
+
+  // In-file search functions
+  const openSearch = () => {
+    setIsSearchOpen(true);
+    setSearchQuery('');
+    setSearchMatches([]);
+    setCurrentMatchIndex(0);
+  };
+
+  const closeSearch = () => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSearchMatches([]);
+    setCurrentMatchIndex(0);
+  };
+
+  const exitSearchAndEdit = (cursorPosition: number) => {
+    // Close search mode
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSearchMatches([]);
+    setCurrentMatchIndex(0);
+    
+    // Focus the text input and set cursor position
+    setTimeout(() => {
+      if (textInputRef.current) {
+        textInputRef.current.focus();
+        // Try to set selection if the API supports it
+        try {
+          // @ts-ignore - React Native TextInput may have setNativeProps
+          textInputRef.current.setNativeProps({
+            selection: { start: cursorPosition, end: cursorPosition }
+          });
+        } catch (e) {
+          console.log('Could not set cursor position:', e);
+        }
+      }
+    }, 100);
+  };
+
+  const performSearch = (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchMatches([]);
+      setCurrentMatchIndex(0);
+      return;
+    }
+
+    const lines = content.split('\n');
+    const matches: { line: number; start: number; end: number; text: string }[] = [];
+    const lowerQuery = query.toLowerCase();
+
+    lines.forEach((line, lineIndex) => {
+      let startIndex = 0;
+      while (true) {
+        const index = line.toLowerCase().indexOf(lowerQuery, startIndex);
+        if (index === -1) break;
+        matches.push({
+          line: lineIndex,
+          start: index,
+          end: index + query.length,
+          text: line,
+        });
+        startIndex = index + 1;
+      }
+    });
+
+    setSearchMatches(matches);
+    setCurrentMatchIndex(matches.length > 0 ? 0 : -1);
+  };
+
+  const goToNextMatch = () => {
+    if (searchMatches.length === 0) return;
+    const newIndex = (currentMatchIndex + 1) % searchMatches.length;
+    setCurrentMatchIndex(newIndex);
+    scrollToMatch(newIndex);
+  };
+
+  const goToPrevMatch = () => {
+    if (searchMatches.length === 0) return;
+    const newIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
+    setCurrentMatchIndex(newIndex);
+    scrollToMatch(newIndex);
+  };
+
+  const scrollToMatch = (matchIndex: number) => {
+    if (matchIndex < 0 || matchIndex >= searchMatches.length || !editorScrollRef.current) return;
+    
+    const match = searchMatches[matchIndex];
+    const lineHeight = 26; // Approximate line height
+    const scrollPosition = match.line * lineHeight;
+    
+    editorScrollRef.current.scrollTo({ y: scrollPosition, animated: true });
   };
 
   // Handle back navigation with unsaved changes
@@ -743,6 +844,15 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
           />
         </TouchableOpacity>
         
+        {/* Search Button */}
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={openSearch}
+          testID="search-button"
+        >
+          <MaterialIcons name="search" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+        
         <TouchableOpacity
           testID="save-button"
           style={[
@@ -775,6 +885,44 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
         </View>
       )}
 
+      {/* Search Overlay */}
+      {isSearchOpen && (
+        <View style={[styles.searchOverlay, { backgroundColor: theme.colors.card }]}>
+          <View style={styles.searchHeader}>
+            <TextInput
+              testID="search-input"
+              style={[styles.searchInput, { color: theme.colors.text, backgroundColor: isDark ? '#2d2d2d' : '#f0f0f0' }]}
+              value={searchQuery}
+              onChangeText={performSearch}
+              placeholder="Search in note..."
+              placeholderTextColor={theme.colors.text + '60'}
+              autoFocus
+            />
+            {searchMatches.length > 0 && (
+              <View style={styles.matchInfoContainer}>
+                <Text style={[styles.matchCounter, { color: theme.colors.text }]}>
+                  {currentMatchIndex + 1} of {searchMatches.length}
+                </Text>
+                {currentMatchIndex >= 0 && searchMatches[currentMatchIndex] && (
+                  <Text style={[styles.matchLineInfo, { color: theme.colors.text + '80' }]}>
+                    Line {searchMatches[currentMatchIndex].line + 1}
+                  </Text>
+                )}
+              </View>
+            )}
+            <TouchableOpacity onPress={goToPrevMatch} disabled={searchMatches.length === 0} testID="search-prev-button">
+              <MaterialIcons name="keyboard-arrow-up" size={24} color={searchMatches.length > 0 ? theme.colors.text : theme.colors.text + '40'} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={goToNextMatch} disabled={searchMatches.length === 0} testID="search-next-button">
+              <MaterialIcons name="keyboard-arrow-down" size={24} color={searchMatches.length > 0 ? theme.colors.text : theme.colors.text + '40'} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={closeSearch} testID="search-close-button">
+              <MaterialIcons name="close" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Editor or Preview */}
       <KeyboardAvoidingView 
         style={styles.keyboardAvoidingView}
@@ -797,28 +945,115 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
           </ScrollView>
         ) : (
           // Edit Mode
-          <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
-            <TextInput
-              testID="editor-input"
-              ref={textInputRef}
-              style={[
-                styles.editor,
-                {
-                  color: theme.colors.text,
-                  backgroundColor: theme.colors.card,
-                },
-              ]}
-              multiline
-              value={content}
-              onChangeText={handleContentChange}
-              placeholder="Start typing..."
-              placeholderTextColor={theme.colors.text + '60'}
-              textAlignVertical="top"
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
-              undoEnabled={true}
-            />
+          <ScrollView 
+            style={styles.content} 
+            keyboardShouldPersistTaps="handled"
+            ref={editorScrollRef}
+          >
+            {isSearchOpen && searchMatches.length > 0 ? (
+              // Search Mode - Show highlighted text
+              <View style={styles.searchableEditor}>
+                {content.split('\n').map((line, lineIndex) => {
+                  // Find matches on this line
+                  const lineMatches = searchMatches.filter(m => m.line === lineIndex);
+                  
+                  // Calculate cursor position for this line
+                  const lineStartPos = content.split('\n').slice(0, lineIndex).join('\n').length + (lineIndex > 0 ? 1 : 0);
+                  
+                  if (lineMatches.length === 0) {
+                    return (
+                      <TouchableOpacity 
+                        key={lineIndex} 
+                        onPress={() => exitSearchAndEdit(lineStartPos + line.length)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.searchLine, { color: theme.colors.text }]}>
+                          {line || ' '}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                  
+                  // Build highlighted line
+                  const parts: JSX.Element[] = [];
+                  let lastEnd = 0;
+                  
+                  lineMatches.forEach((match, idx) => {
+                    // Text before match
+                    if (match.start > lastEnd) {
+                      parts.push(
+                        <Text key={`before-${idx}`} style={{ color: theme.colors.text }}>
+                          {line.substring(lastEnd, match.start)}
+                        </Text>
+                      );
+                    }
+                    
+                    // Highlighted match text
+                    const isActiveMatch = lineIndex === searchMatches[currentMatchIndex]?.line && 
+                                         match.start === searchMatches[currentMatchIndex]?.start;
+                    parts.push(
+                      <Text 
+                        key={`match-${idx}`} 
+                        style={{
+                          backgroundColor: isActiveMatch ? theme.colors.primary : theme.colors.primary + '60',
+                          color: theme.colors.background,
+                          borderRadius: 2,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {line.substring(match.start, match.end)}
+                      </Text>
+                    );
+                    
+                    lastEnd = match.end;
+                  });
+                  
+                  // Text after last match
+                  if (lastEnd < line.length) {
+                    parts.push(
+                      <Text key="after" style={{ color: theme.colors.text }}>
+                        {line.substring(lastEnd)}
+                      </Text>
+                    );
+                  }
+                  
+                  return (
+                    <TouchableOpacity 
+                      key={lineIndex} 
+                      onPress={() => exitSearchAndEdit(lineStartPos + line.length)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.searchLine}>
+                        {parts.length > 0 ? parts : ' '}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              // Normal Edit Mode
+              <TextInput
+                testID="editor-input"
+                ref={textInputRef}
+                style={[
+                  styles.editor,
+                  {
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.card,
+                  },
+                ]}
+                multiline
+                value={content}
+                onChangeText={handleContentChange}
+                placeholder="Start typing..."
+                placeholderTextColor={theme.colors.text + '60'}
+                textAlignVertical="top"
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                undoEnabled={true}
+              />
+            )}
           </ScrollView>
         )}
       </KeyboardAvoidingView>
@@ -1043,5 +1278,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     paddingVertical: 24,
+  },
+  searchButton: {
+    padding: 8,
+    borderRadius: 8,
+    marginHorizontal: 4,
+  },
+  searchOverlay: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  searchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 16,
+  },
+  matchCounter: {
+    fontSize: 14,
+    fontWeight: '500',
+    minWidth: 50,
+    textAlign: 'center',
+  },
+  matchInfoContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matchLineInfo: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  searchableEditor: {
+    padding: 20,
+    minHeight: '100%',
+  },
+  searchLine: {
+    fontSize: 16,
+    lineHeight: 26,
+    flexWrap: 'wrap',
   },
 });

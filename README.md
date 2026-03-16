@@ -164,6 +164,8 @@ Artifacts:
 - **Global Search** - Search across all notes (`⌘⇧F`)
 - **History Navigation** - Go back/forward through file history (`⌘[` / `⌘]`)
 - **Backlinks** - See which notes link to the current note
+- **Mobile: Find in Note** - Search within the current note from the editor toolbar
+- **Mobile: Vault Search** - Search across all notes directly from the file drawer
 
 ### Graph Visualization
 - **Local Graph** - 1-hop view of connections from current note
@@ -279,6 +281,7 @@ Type a slash command at the start of a line or after a space — it expands auto
 | Open Today's Note | `⌃⌘H` |
 | Toggle Sidebar | Click sidebar icons |
 | Toggle Preview Mode | `⌘⇧P` |
+| Toggle Hide Markdown While Editing | `⌘E` |
 
 ## Markdown Guide
 

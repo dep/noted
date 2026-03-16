@@ -75,6 +75,22 @@ mobile/
 - Persistent onboarding state using AsyncStorage
 - Shown only on first app launch (unless state is cleared)
 
+### Search
+- **In-file Search**: Search within the currently open note
+  - Accessible from search icon in editor toolbar
+  - Real-time highlighting of matches as you type
+  - Match counter showing current/total matches (e.g., "2 of 12")
+  - Previous/next navigation buttons to jump between matches
+  - Case-insensitive search
+  - Close button or back gesture to dismiss
+  
+- **Vault-wide Search**: Search across all notes in the repository
+  - Accessible from file drawer search bar
+  - Real-time search results with 300ms debounce
+  - Shows file name, line number, and matching line preview
+  - Tappable results to open the file
+  - Matches light/dark theme automatically
+
 ### Dependencies
 - **Expo SDK 55**: Latest stable Expo framework
 - **React Navigation**: Navigation library for React Native

@@ -43,6 +43,7 @@ Synapse packs a robust set of features to boost your productivity.
 - **Tabs:** Cycle through your most recently used (MRU) tabs seamlessly.
 - **Split Panes:** Work efficiently by splitting your editor vertically or horizontally.
 - **Command Palette:** Quickly find files or insert templates from anywhere.
+- **Mobile Search:** Search within the current note from the editor toolbar, or search across your entire vault from the file drawer.
 
 ### Graph View
 Visualize connections between your notes.
@@ -161,3 +162,4 @@ Synapse relies heavily on keyboard shortcuts to help you navigate and edit quick
 | Open Global Graph | `CMD + SHIFT + G` |
 | Open Today's Note | `CTRL + CMD + H` |
 | Toggle Preview Mode | `CMD + SHIFT + P` |
+| Toggle Hide Markdown While Editing | `CMD + E` |
