@@ -84,6 +84,12 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
   
   // Navigation history for back button support
   const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
+  
+  // In-file search state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatches, setSearchMatches] = useState<{ line: number; start: number; end: number; text: string }[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
   useEffect(() => {
     loadFile();
@@ -279,6 +285,62 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
     setWikilinkStartPos(null);
     setWikilinkSearch('');
     setFilteredNotes([]);
+  };
+
+  // In-file search functions
+  const openSearch = () => {
+    setIsSearchOpen(true);
+    setSearchQuery('');
+    setSearchMatches([]);
+    setCurrentMatchIndex(0);
+  };
+
+  const closeSearch = () => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSearchMatches([]);
+    setCurrentMatchIndex(0);
+  };
+
+  const performSearch = (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchMatches([]);
+      setCurrentMatchIndex(0);
+      return;
+    }
+
+    const lines = content.split('\n');
+    const matches: { line: number; start: number; end: number; text: string }[] = [];
+    const lowerQuery = query.toLowerCase();
+
+    lines.forEach((line, lineIndex) => {
+      let startIndex = 0;
+      while (true) {
+        const index = line.toLowerCase().indexOf(lowerQuery, startIndex);
+        if (index === -1) break;
+        matches.push({
+          line: lineIndex,
+          start: index,
+          end: index + query.length,
+          text: line,
+        });
+        startIndex = index + 1;
+      }
+    });
+
+    setSearchMatches(matches);
+    setCurrentMatchIndex(matches.length > 0 ? 0 : -1);
+  };
+
+  const goToNextMatch = () => {
+    if (searchMatches.length === 0) return;
+    setCurrentMatchIndex((prev) => (prev + 1) % searchMatches.length);
+  };
+
+  const goToPrevMatch = () => {
+    if (searchMatches.length === 0) return;
+    setCurrentMatchIndex((prev) => (prev - 1 + searchMatches.length) % searchMatches.length);
   };
 
   // Handle back navigation with unsaved changes
@@ -743,6 +805,15 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
           />
         </TouchableOpacity>
         
+        {/* Search Button */}
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={openSearch}
+          testID="search-button"
+        >
+          <MaterialIcons name="search" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+        
         <TouchableOpacity
           testID="save-button"
           style={[
@@ -772,6 +843,37 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
       {error && (
         <View style={[styles.errorContainer, { backgroundColor: theme.colors.error + '20' }]}>
           <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
+        </View>
+      )}
+
+      {/* Search Overlay */}
+      {isSearchOpen && (
+        <View style={[styles.searchOverlay, { backgroundColor: theme.colors.card }]}>
+          <View style={styles.searchHeader}>
+            <TextInput
+              testID="search-input"
+              style={[styles.searchInput, { color: theme.colors.text, backgroundColor: isDark ? '#2d2d2d' : '#f0f0f0' }]}
+              value={searchQuery}
+              onChangeText={performSearch}
+              placeholder="Search in note..."
+              placeholderTextColor={theme.colors.text + '60'}
+              autoFocus
+            />
+            {searchMatches.length > 0 && (
+              <Text style={[styles.matchCounter, { color: theme.colors.text }]}>
+                {currentMatchIndex + 1} of {searchMatches.length}
+              </Text>
+            )}
+            <TouchableOpacity onPress={goToPrevMatch} disabled={searchMatches.length === 0} testID="search-prev-button">
+              <MaterialIcons name="keyboard-arrow-up" size={24} color={searchMatches.length > 0 ? theme.colors.text : theme.colors.text + '40'} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={goToNextMatch} disabled={searchMatches.length === 0} testID="search-next-button">
+              <MaterialIcons name="keyboard-arrow-down" size={24} color={searchMatches.length > 0 ? theme.colors.text : theme.colors.text + '40'} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={closeSearch} testID="search-close-button">
+              <MaterialIcons name="close" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -1043,5 +1145,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     paddingVertical: 24,
+  },
+  searchButton: {
+    padding: 8,
+    borderRadius: 8,
+    marginHorizontal: 4,
+  },
+  searchOverlay: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  searchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 16,
+  },
+  matchCounter: {
+    fontSize: 14,
+    fontWeight: '500',
+    minWidth: 50,
+    textAlign: 'center',
   },
 });
