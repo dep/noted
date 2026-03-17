@@ -353,7 +353,13 @@ struct RawEditor: NSViewRepresentable {
             // hideMarkdownWhileEditing was just toggled off — restore full styling.
             textView.applyMarkdownStyling()
         }
-        textView.onOpenFile = { appState.openFile($0) }
+        textView.onOpenFile = { url, openInNewTab in
+            if openInNewTab {
+                appState.openFileInNewTab(url)
+            } else {
+                appState.openFile(url)
+            }
+        }
         textView.onMatchCountUpdate = { count in appState.searchMatchCount = count }
         textView.onActivatePane = isEditable ? nil : { appState.focusPane(paneIndex) }
         textView.refreshInlineImagePreviews()
@@ -448,7 +454,8 @@ struct RawEditor: NSViewRepresentable {
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-            return (textView as? LinkAwareTextView)?.handleLinkClick(link) ?? false
+            // NSTextView link delegate - always open in same tab for external links
+            return (textView as? LinkAwareTextView)?.handleLinkClick(link, openInNewTab: false) ?? false
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -1186,7 +1193,7 @@ private func debugLog(_ msg: String) {
 
 class LinkAwareTextView: NSTextView {
     var allFiles: [URL] = []
-    var onOpenFile: ((URL) -> Void)?
+    var onOpenFile: ((URL, Bool) -> Void)?
     var onActivatePane: (() -> Void)?
     var onCreateNote: ((String, URL?) -> Void)?  // name, preferred directory
     var currentFileURL: URL?
@@ -1236,20 +1243,35 @@ class LinkAwareTextView: NSTextView {
         if activatePaneOnReadOnlyInteraction(isEditable: isEditable, onActivatePane: onActivatePane) {
             return
         }
-        // Wiki link clicks always open the note — never place the cursor inside the link.
-        // Use fractionOfDistanceBetweenInsertionPoints to confirm the click landed on a glyph,
-        // not just near one (avoids false triggers from clicks below/beside the link).
         let point = convert(event.locationInWindow, from: nil)
-        if let layout = layoutManager, let container = textContainer {
-            var fraction: CGFloat = 0
-            let charIndex = layout.characterIndex(for: point, in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)
-            if charIndex < (string as NSString).length, fraction > 0, fraction < 1,
-               let target = textStorage?.attribute(.wikilinkTarget, at: charIndex, effectiveRange: nil) as? String {
-                _ = handleLinkClick(target)
-                return
-            }
+        if let target = wikilinkTarget(at: point) {
+            let openInNewTab = event.modifierFlags.contains(.command)
+            _ = handleLinkClick(target, openInNewTab: openInNewTab)
+            return
         }
         super.mouseDown(with: event)
+    }
+
+    func wikilinkTarget(at viewPoint: NSPoint) -> String? {
+        guard let layout = layoutManager, let container = textContainer else { return nil }
+
+        let containerPoint = NSPoint(
+            x: viewPoint.x - textContainerOrigin.x,
+            y: viewPoint.y - textContainerOrigin.y
+        )
+        var fraction: CGFloat = 0
+        let charIndex = layout.characterIndex(
+            for: containerPoint,
+            in: container,
+            fractionOfDistanceBetweenInsertionPoints: &fraction
+        )
+        guard charIndex < (string as NSString).length else { return nil }
+
+        let glyphIndex = layout.glyphIndexForCharacter(at: charIndex)
+        let glyphRect = layout.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: container)
+        guard glyphRect.contains(containerPoint) else { return nil }
+
+        return textStorage?.attribute(.wikilinkTarget, at: charIndex, effectiveRange: nil) as? String
     }
 
     // MARK: - Focus support
@@ -1805,7 +1827,7 @@ class LinkAwareTextView: NSTextView {
         dismissCompletion()
     }
 
-    func handleLinkClick(_ link: Any) -> Bool {
+    func handleLinkClick(_ link: Any, openInNewTab: Bool) -> Bool {
         if let url = link as? URL {
             NSWorkspace.shared.open(url)
             return true
@@ -1818,7 +1840,7 @@ class LinkAwareTextView: NSTextView {
             .map { $0.trimmingCharacters(in: .whitespaces) } ?? inner
 
         if let match = allFiles.first(where: { $0.deletingPathExtension().lastPathComponent == name }) {
-            onOpenFile?(match)
+            onOpenFile?(match, openInNewTab)
             return true
         }
 

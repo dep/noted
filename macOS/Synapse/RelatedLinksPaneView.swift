@@ -102,7 +102,15 @@ struct RelatedLinksPaneView: View {
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(items, id: \.self) { url in
-                        Button(action: { appState.openFile(url) }) {
+                        Button(action: {
+                            // Check if Command key is held (for opening in new tab)
+                            let openInNewTab = NSEvent.modifierFlags.contains(.command)
+                            if openInNewTab {
+                                appState.openFileInNewTab(url)
+                            } else {
+                                appState.openFile(url)
+                            }
+                        }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "doc.text")
                                     .foregroundStyle(SynapseTheme.accent)
