@@ -23,6 +23,14 @@ source .env && xcrun notarytool store-credentials "notarytool" \
 
 ## Step-by-Step
 
+### 0. Update the project's version number, incrementing the patch version unless told it's a minor or major release.
+
+```bash
+# in macOS/Synapse/Info.plist
+<key>CFBundleShortVersionString</key>
+<string>x.y.z</string>
+```
+
 ### 1. Create a signed Release archive
 
 ```bash
@@ -77,7 +85,7 @@ spctl --assess --type execute --verbose /tmp/Synapse-export/Synapse.app
 ### 4. Zip for distribution
 
 ```bash
-cd /tmp/Synapse-export && zip -r --symlinks ~/Desktop/Synapse-1.0.zip Synapse.app
+cd /tmp/Synapse-export && zip -r --symlinks ~/Desktop/Synapse-<version>.zip Synapse.app
 ```
 
 ## Expected Output
@@ -89,7 +97,7 @@ Successful validation should show:
 ## Artifacts
 
 - Notarized app: `/tmp/Synapse-export/Synapse.app`
-- Shareable zip: `~/Desktop/Synapse-1.0.zip`
+- Shareable zip: `~/Desktop/Synapse-<version>.zip`
 
 ## One-Liner
 
@@ -113,5 +121,26 @@ ditto -c -k --keepParent /tmp/Synapse-export/Synapse.app /tmp/Synapse-export/Syn
 xcrun notarytool submit /tmp/Synapse-export/Synapse.zip --keychain-profile "notarytool" --wait && \
 xcrun stapler staple /tmp/Synapse-export/Synapse.app && \
 spctl --assess --type execute --verbose /tmp/Synapse-export/Synapse.app && \
-cd /tmp/Synapse-export && zip -r --symlinks ~/Desktop/Synapse-1.0.zip Synapse.app
+cd /tmp/Synapse-export && zip -r --symlinks ~/Desktop/Synapse-<version>.zip Synapse.app
+```
+
+### 5. Commit and push the version bump
+
+```bash
+git commit -m "bump version to <version>"
+git push
+```
+
+### 6. Create a release on GitHub
+
+Use what you know about recent changes to generate the release notes.
+
+```bash
+gh release create <version> --title "<version>" --notes "<dynamically generated release notes>"
+```
+
+Attach the shareable zip to the release.
+
+```bash
+gh release upload <version> ~/Desktop/Synapse-<version>.zip
 ```
