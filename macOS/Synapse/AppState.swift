@@ -239,7 +239,7 @@ class AppState: ObservableObject {
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var filePollCancellable: AnyCancellable?
     private var hideMarkdownModeCancellable: AnyCancellable?
-    private var settingsObjectWillChangeCancellable: AnyCancellable?
+    private var settingsRefreshCancellable: AnyCancellable?
     private var watchedFD: Int32 = -1
 
     private var gitService: GitService?
@@ -263,18 +263,23 @@ class AppState: ObservableObject {
     }
 
     private func bindSettingsObservers() {
-        settingsObjectWillChangeCancellable = settings.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
+        let appRefreshPublishers: [AnyPublisher<Void, Never>] = [
+            settings.$dailyNotesEnabled.map { _ in () }.eraseToAnyPublisher(),
+            settings.$hideMarkdownWhileEditing.map { _ in () }.eraseToAnyPublisher(),
+            settings.$githubPAT.map { _ in () }.eraseToAnyPublisher()
+        ]
+
+        settingsRefreshCancellable = Publishers.MergeMany(appRefreshPublishers)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                self?.objectWillChange.send()
+            }
 
         hideMarkdownModeCancellable = settings.$hideMarkdownWhileEditing.sink { [weak self] hideMarkdown in
             guard let self else { return }
             // Hide-markdown mode is edit-only; force edit mode to avoid read-only lockout.
             if hideMarkdown && !self.isEditMode {
                 self.isEditMode = true
-            }
-            DispatchQueue.main.async { [weak self] in
-                self?.objectWillChange.send()
             }
         }
     }
@@ -1150,7 +1155,11 @@ class AppState: ObservableObject {
 
     func presentCommandPalette(mode: CommandPaletteMode = .files) {
         guard rootURL != nil else { return }
-        commandPaletteMode = mode
+        if mode == .files, wikiLinkCompletionHandler != nil {
+            commandPaletteMode = .wikiLink
+        } else {
+            commandPaletteMode = mode
+        }
         isCommandPalettePresented = true
     }
 
@@ -1164,6 +1173,7 @@ class AppState: ObservableObject {
         commandPaletteMode = .files
         targetDirectoryForTemplate = nil
         pendingTemplateURL = nil
+        wikiLinkCompletionHandler = nil
         wikiLinkDismissHandler = nil
     }
 
