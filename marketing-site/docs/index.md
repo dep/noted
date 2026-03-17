@@ -6,7 +6,9 @@ layout: doc
 
 ![](images/hero.png)
 
-Synapse is a powerful Markdown-based knowledge management application exclusively built for macOS using SwiftUI. It serves as your second brain, supercharged with local graph visualization, Git sync, and seamless workflows.
+Synapse is a powerful Markdown-based knowledge management application exclusively built for macOS using SwiftUI. Synced to your own GitHub repository, it serves as your second brain, supercharged with local graph visualization, and seamless workflows.
+
+Zero lock-in. Synapse works with any folder or GitHub repository: open it, and it's instantly a notes interface. Close it, and your files are just files. Saves are just Git commits. Seamless.
 
 ♥️ Built by nerds _for_ nerds.
 
