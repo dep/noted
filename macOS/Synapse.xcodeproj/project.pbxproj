@@ -109,6 +109,8 @@
 		F130A3AE3317CD34B8419BAA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CB8BA24E7E55C8EF0A3530F0 /* Assets.xcassets */; };
 		FA748D708DD0F029A45CA494 /* GraphPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ADBC72A6A85DB161568424D /* GraphPaneView.swift */; };
 		FFB20CCC7CDB7FD7D16E73EE /* AppStateSettingsPropagationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DC2A24B73EE5F6505170332 /* AppStateSettingsPropagationTests.swift */; };
+		76B1FAD07E6AC9C3D5A49B5D /* UpdateBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A7390F4392559FCA7047A2 /* UpdateBannerView.swift */; };
+		8808A822F7A0C9061D620532 /* AutoUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8E3232273571E749E175B57 /* AutoUpdater.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -225,6 +227,8 @@
 		FE443AECAB749CEBD9058E7C /* AppStatePinnedFolderFocusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStatePinnedFolderFocusTests.swift; sourceTree = "<group>"; };
 		FEFD465FCA255C7225417AB1 /* TemplatesDirectoryHiddenFolderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplatesDirectoryHiddenFolderTests.swift; sourceTree = "<group>"; };
 		FF3182DCA96C9518DC154E22 /* GitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitService.swift; sourceTree = "<group>"; };
+		23A7390F4392559FCA7047A2 /* UpdateBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateBannerView.swift; sourceTree = "<group>"; };
+		F8E3232273571E749E175B57 /* AutoUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoUpdater.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -246,6 +250,7 @@
 			children = (
 				F0767AC48736498C7296D8B6 /* AppState.swift */,
 				CB8BA24E7E55C8EF0A3530F0 /* Assets.xcassets */,
+				F8E3232273571E749E175B57 /* AutoUpdater.swift */,
 				A2378A288D2FE5AEAA19A8EA /* CollapsibleSection.swift */,
 				29CA9E8A87139F33100BCC83 /* CommandPaletteView.swift */,
 				4A1C79B3232B98A6F756FE47 /* Constants.swift */,
@@ -272,6 +277,7 @@
 				928B9D0E079FF89907F205E4 /* TagsPaneView.swift */,
 				B2933BCDF0B2B56488D2D9F4 /* TerminalPaneView.swift */,
 				466921F2CFCBF80C26417D68 /* Theme.swift */,
+				23A7390F4392559FCA7047A2 /* UpdateBannerView.swift */,
 			);
 			path = Synapse;
 			sourceTree = "<group>";
@@ -550,6 +556,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				879C70A3EEC9637B2E355681 /* AppState.swift in Sources */,
+				8808A822F7A0C9061D620532 /* AutoUpdater.swift in Sources */,
 				8DF6C8091C8EF8192BDDCDD1 /* CollapsibleSection.swift in Sources */,
 				59A6F7BB258D1FF977C53B25 /* CommandPaletteView.swift in Sources */,
 				95878F8A850A56ED9838178A /* Constants.swift in Sources */,
@@ -574,6 +581,7 @@
 				95894C3787EAA8AF0D094716 /* TagsPaneView.swift in Sources */,
 				B26B4268AD9B4A526D7D6049 /* TerminalPaneView.swift in Sources */,
 				B0B6400BA0E32822AB81A020 /* Theme.swift in Sources */,
+				76B1FAD07E6AC9C3D5A49B5D /* UpdateBannerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -26,11 +26,13 @@ func shouldConsumePaneSwitchShortcut(
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var autoUpdater: AutoUpdater
     @State private var isLeftSidebarVisible = true
     @State private var isRightSidebarVisible = true
     @State private var keyEventMonitor: Any?
     @State private var leftSidebarWidth: CGFloat = 280
     @State private var rightSidebarWidth: CGFloat = 340
+    @State private var showUpdateBanner: Bool = false
 
     var body: some View {
         ZStack {
@@ -77,6 +79,14 @@ struct ContentView: View {
                     .environmentObject(appState)
                     .transition(.opacity)
                     .zIndex(2)
+            }
+
+            if showUpdateBanner, let version = autoUpdater.latestVersion {
+                VStack {
+                    UpdateBannerView(version: version, isPresented: $showUpdateBanner)
+                    Spacer()
+                }
+                .zIndex(3)
             }
 
             Group {
@@ -218,6 +228,13 @@ struct ContentView: View {
         .sheet(item: $appState.pendingTemplateRename) { (request: TemplateRenameRequest) in
             TemplateRenameSheet(request: request)
                 .environmentObject(appState)
+        }
+        .onChange(of: autoUpdater.updateInstalled) { installed in
+            if installed {
+                withAnimation {
+                    showUpdateBanner = true
+                }
+            }
         }
         .onAppear(perform: installEventMonitor)
         .onDisappear(perform: removeEventMonitor)
