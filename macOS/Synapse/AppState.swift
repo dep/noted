@@ -245,6 +245,7 @@ class AppState: ObservableObject {
     private var gitService: GitService?
     private var pushTimer: Timer?
     private var pullTimer: Timer?
+    private var autoSaveTimer: Timer?
     private let gitQueue = DispatchQueue(label: "com.Synapse.git", qos: .background)
     private let machineName: String = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
 
@@ -961,11 +962,17 @@ class AppState: ObservableObject {
         // Try auto-push if enabled before exiting
         autoPushIfEnabled()
 
-        // Clean up git service
+        // Clean up git service and timers
         gitService = nil
         gitBranch = AppConstants.defaultBranchName
         gitAheadCount = 0
         gitSyncStatus = .notGitRepo
+        pushTimer?.invalidate()
+        pushTimer = nil
+        pullTimer?.invalidate()
+        pullTimer = nil
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
 
         // Clean up file watching
         stopWatching()
@@ -1003,6 +1010,8 @@ class AppState: ObservableObject {
         pushTimer = nil
         pullTimer?.invalidate()
         pullTimer = nil
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
 
         if GitService.isGitRepo(at: url), let git = try? GitService(repoURL: url) {
             gitService = git
@@ -1011,11 +1020,13 @@ class AppState: ObservableObject {
             gitSyncStatus = .idle
             startPushTimer()
             startPullTimer()
+            startAutoSaveTimer()
         } else {
             gitService = nil
             gitBranch = AppConstants.defaultBranchName
             gitAheadCount = 0
             gitSyncStatus = .notGitRepo
+            startAutoSaveTimer()
         }
     }
 
@@ -1033,6 +1044,27 @@ class AppState: ObservableObject {
         }
         RunLoop.main.add(timer, forMode: .common)
         pullTimer = timer
+    }
+
+    private func startAutoSaveTimer() {
+        autoSaveTimer?.invalidate()
+        let timer = Timer(timeInterval: 120, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            // Save current pane if dirty
+            if self.isDirty {
+                self.saveCurrentFile(content: self.fileContent)
+            }
+            // Also save any inactive panes that have unsaved changes
+            for (index, pane) in self.paneStates.enumerated() {
+                if index != self.activePaneIndex && pane.isDirty {
+                    if let fileURL = pane.selectedFile {
+                        try? pane.fileContent.write(to: fileURL, atomically: true, encoding: .utf8)
+                    }
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        autoSaveTimer = timer
     }
 
     func pullLatest() {
@@ -1931,6 +1963,47 @@ class AppState: ObservableObject {
             paneStates[targetPane].selectedFile = url
             paneStates[targetPane].fileContent = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             activePaneIndex = targetPane
+        }
+    }
+    
+    // MARK: - Unsaved Changes Management
+    
+    /// Returns true if any pane has unsaved changes
+    func hasUnsavedChanges() -> Bool {
+        // Check the active pane's live state
+        if isDirty {
+            return true
+        }
+        
+        // Check inactive panes' saved state
+        for (index, pane) in paneStates.enumerated() {
+            if index != activePaneIndex && pane.isDirty {
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+    /// Saves all unsaved changes across all panes
+    func saveAllUnsavedChanges() {
+        // Save current pane if dirty
+        if isDirty {
+            saveAndSyncCurrentFile()
+        }
+        
+        // Save inactive panes that have unsaved changes
+        for (index, pane) in paneStates.enumerated() {
+            if index != activePaneIndex && pane.isDirty {
+                if let fileURL = pane.selectedFile {
+                    // Directly write content to file without changing app state
+                    try? pane.fileContent.write(to: fileURL, atomically: true, encoding: .utf8)
+                    // Also stage git changes if auto-push is enabled
+                    if settings.autoPush, let git = gitService {
+                        try? git.stageAll()
+                    }
+                }
+            }
         }
     }
 }

@@ -1,9 +1,50 @@
 import SwiftUI
 
+/// AppDelegate adapter to handle application termination with unsaved changes
+class SynapseAppDelegate: NSObject, NSApplicationDelegate {
+    var appState: AppState?
+    
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let appState = appState else {
+            return .terminateNow
+        }
+        
+        // Check if any pane has unsaved changes
+        if appState.hasUnsavedChanges() {
+            // Show confirmation dialog
+            let alert = NSAlert()
+            alert.messageText = "You have unsaved changes."
+            alert.informativeText = "Do you want to save your changes before quitting?"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Save & Exit")
+            alert.addButton(withTitle: "Exit Without Saving")
+            alert.addButton(withTitle: "Cancel")
+            
+            let response = alert.runModal()
+            
+            switch response {
+            case .alertFirstButtonReturn: // Save & Exit
+                // Save all unsaved changes
+                appState.saveAllUnsavedChanges()
+                return .terminateNow
+                
+            case .alertSecondButtonReturn: // Exit Without Saving
+                return .terminateNow
+                
+            default: // Cancel (third button or ESC)
+                return .terminateCancel
+            }
+        }
+        
+        return .terminateNow
+    }
+}
+
 @main
 struct SynapseApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var autoUpdater = AutoUpdater()
+    @NSApplicationDelegateAdaptor(SynapseAppDelegate.self) var appDelegate
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +63,8 @@ struct SynapseApp: App {
                     .frame(minWidth: 900, minHeight: 600)
                     .onAppear {
                         autoUpdater.checkForUpdatesOnLaunch()
+                        // Wire up app delegate to appState
+                        appDelegate.appState = appState
                     }
             }
         }
