@@ -210,15 +210,17 @@ Drag and drop panes between left and right sidebars:
 - **Related** - Backlinks and outgoing links
 - **Terminal** - Integrated ZSH terminal
 - **Graph** - Local graph view
+- **Pinned Note Panes** - Drag a note from the file tree, a file tab, or Finder into any sidebar to keep it open as an editable pane
+- Dropped note panes stack with the existing sidebar chrome and persist with the saved sidebar layout
 
 ### Publishing
 - **Gist Publishing** - Publish notes to GitHub Gists (requires GitHub PAT)
 
 ### Vault-Specific Settings
-Settings automatically sync with your vault. When you open a vault, Synapse stores its settings in `.noted/settings.yml` at the vault root:
+Settings automatically sync with your vault. When you open a vault, Synapse stores its settings in `.synapse/settings.yml` at the vault root:
 - Settings travel with the vault — perfect for syncing via Git or cloud storage
 - Each vault has its own independent settings
-- The `.noted` folder is visible in the file tree and can be committed to version control
+- The `.synapse` folder is visible in the file tree and can be committed to version control
 - Your GitHub Personal Access Token stays local in `~/Library/Application Support/Synapse/settings.yml` (never leaves your machine)
 
 ## Keyboard Shortcuts

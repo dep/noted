@@ -337,6 +337,9 @@ struct FileTreeView: View {
                                         .background(appState.selectedFile == url ? SynapseTheme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                                     }
                                     .buttonStyle(.plain)
+                                    .onDrag {
+                                        sidebarFileItemProvider(for: url)
+                                    }
                                 }
                             }
                             .padding(.vertical, 4)
@@ -668,6 +671,7 @@ struct FileNodeRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: handleTap)
+            .modifier(FileNodeDragModifier(fileURL: node.isDirectory ? nil : node.url))
             .contextMenu {
                 Button("New Note") { appState.presentRootNoteSheet(in: contextDirectory) }
                 Button("New Folder") { onCreateFolder(contextDirectory) }
@@ -716,6 +720,21 @@ struct FileNodeRow: View {
             } else {
                 appState.openFile(node.url)
             }
+        }
+    }
+}
+
+private struct FileNodeDragModifier: ViewModifier {
+    let fileURL: URL?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let fileURL {
+            content.onDrag {
+                sidebarFileItemProvider(for: fileURL)
+            }
+        } else {
+            content
         }
     }
 }

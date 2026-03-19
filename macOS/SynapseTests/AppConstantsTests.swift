@@ -12,7 +12,7 @@ final class AppConstantsTests: XCTestCase {
     // MARK: - Directory / filename constants
 
     func test_vaultConfigDirectory_isExpectedValue() {
-        XCTAssertEqual(AppConstants.vaultConfigDirectory, ".noted",
+        XCTAssertEqual(AppConstants.vaultConfigDirectory, ".synapse",
                        "Changing this breaks vault settings discovery")
     }
 

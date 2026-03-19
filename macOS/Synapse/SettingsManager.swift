@@ -24,6 +24,120 @@ enum SidebarPane: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+struct SidebarNotePane: Codable, Equatable, Hashable, Identifiable {
+    let id: UUID
+    var path: String
+
+    init(id: UUID = UUID(), path: String) {
+        self.id = id
+        self.path = URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    init(id: UUID = UUID(), fileURL: URL) {
+        self.init(id: id, path: fileURL.standardizedFileURL.path)
+    }
+
+    var fileURL: URL {
+        URL(fileURLWithPath: path).standardizedFileURL
+    }
+
+    var title: String {
+        let fileName = fileURL.deletingPathExtension().lastPathComponent
+        return fileName.isEmpty ? fileURL.lastPathComponent : fileName
+    }
+}
+
+enum SidebarPaneItem: Codable, Equatable, Hashable, Identifiable {
+    case builtIn(SidebarPane)
+    case note(SidebarNotePane)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case id
+        case path
+    }
+
+    private enum Kind: String, Codable {
+        case note
+    }
+
+    init(from decoder: Decoder) throws {
+        if let pane = try? decoder.singleValueContainer().decode(SidebarPane.self) {
+            self = .builtIn(pane)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .type) {
+        case .note:
+            let id = try container.decode(UUID.self, forKey: .id)
+            let path = try container.decode(String.self, forKey: .path)
+            self = .note(SidebarNotePane(id: id, path: path))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .builtIn(let pane):
+            var container = encoder.singleValueContainer()
+            try container.encode(pane)
+        case .note(let note):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(Kind.note, forKey: .type)
+            try container.encode(note.id, forKey: .id)
+            try container.encode(note.path, forKey: .path)
+        }
+    }
+
+    var id: String {
+        switch self {
+        case .builtIn(let pane):
+            return pane.rawValue
+        case .note(let note):
+            return "note:\(note.id.uuidString)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .builtIn(let pane):
+            return pane.title
+        case .note(let note):
+            return note.title
+        }
+    }
+
+    var storageKey: String { id }
+
+    var builtInPane: SidebarPane? {
+        guard case .builtIn(let pane) = self else { return nil }
+        return pane
+    }
+
+    var notePane: SidebarNotePane? {
+        guard case .note(let note) = self else { return nil }
+        return note
+    }
+
+    static func file(fileURL: URL, id: UUID = UUID()) -> SidebarPaneItem {
+        .note(SidebarNotePane(id: id, fileURL: fileURL))
+    }
+}
+
+extension Array where Element == SidebarPaneItem {
+    func contains(_ pane: SidebarPane) -> Bool {
+        contains { $0.builtInPane == pane }
+    }
+}
+
+func == (lhs: [SidebarPaneItem], rhs: [SidebarPane]) -> Bool {
+    lhs == rhs.map(SidebarPaneItem.builtIn)
+}
+
+func == (lhs: [SidebarPane], rhs: [SidebarPaneItem]) -> Bool {
+    rhs == lhs
+}
+
 /// Position of a sidebar container (left or right side of the window)
 enum SidebarPosition: String, Codable, CaseIterable {
     case left = "left"
@@ -34,9 +148,9 @@ enum SidebarPosition: String, Codable, CaseIterable {
 struct Sidebar: Identifiable, Codable, Equatable {
     let id: UUID
     var position: SidebarPosition
-    var panes: [SidebarPane]
+    var panes: [SidebarPaneItem]
     
-    init(id: UUID, position: SidebarPosition, panes: [SidebarPane] = []) {
+    init(id: UUID, position: SidebarPosition, panes: [SidebarPaneItem] = []) {
         self.id = id
         self.position = position
         self.panes = panes
@@ -54,9 +168,9 @@ enum FixedSidebar {
     static let right2ID = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
 
     static let all: [Sidebar] = [
-        Sidebar(id: leftID,   position: .left,  panes: [.files, .links]),
-        Sidebar(id: right1ID, position: .right, panes: [.terminal, .tags]),
-        Sidebar(id: right2ID, position: .right, panes: [.browser]),
+        Sidebar(id: leftID,   position: .left,  panes: [.builtIn(.files), .builtIn(.links)]),
+        Sidebar(id: right1ID, position: .right, panes: [.builtIn(.terminal), .builtIn(.tags)]),
+        Sidebar(id: right2ID, position: .right, panes: [.builtIn(.browser)]),
     ]
 }
 
@@ -138,33 +252,38 @@ class SettingsManager: ObservableObject {
 
     /// Panes not assigned to any sidebar
     var availablePanes: [SidebarPane] {
-        let used = Set(sidebars.flatMap { $0.panes })
+        let used = Set(sidebars.flatMap { $0.panes.compactMap(\.builtInPane) })
         return SidebarPane.allCases.filter { !used.contains($0) }
     }
 
     /// Move a pane to a sidebar (removes it from wherever it currently lives first)
     func assignPane(_ pane: SidebarPane, toSidebar id: UUID) {
         var updated = sidebars
-        for i in updated.indices { updated[i].panes.removeAll { $0 == pane } }
+        for i in updated.indices { updated[i].panes.removeAll { $0.builtInPane == pane } }
         if let i = updated.firstIndex(where: { $0.id == id }),
            !updated[i].panes.contains(pane) {
-            updated[i].panes.append(pane)
+            updated[i].panes.append(.builtIn(pane))
         }
         sidebars = updated
     }
 
     /// Move a pane to a sidebar at a specific insertion index.
     func movePane(_ pane: SidebarPane, toSidebar id: UUID, at insertionIndex: Int) {
+        movePaneItem(.builtIn(pane), toSidebar: id, at: insertionIndex)
+    }
+
+    /// Move any sidebar item to a sidebar at a specific insertion index.
+    func movePaneItem(_ item: SidebarPaneItem, toSidebar id: UUID, at insertionIndex: Int) {
         var updated = sidebars
         var removedFromSameSidebarBeforeTarget = false
 
         for i in updated.indices {
             if updated[i].id == id,
-               let existingIndex = updated[i].panes.firstIndex(of: pane) {
+               let existingIndex = updated[i].panes.firstIndex(of: item) {
                 updated[i].panes.remove(at: existingIndex)
-                removedFromSameSidebarBeforeTarget = true
+                removedFromSameSidebarBeforeTarget = existingIndex < insertionIndex
             } else {
-                updated[i].panes.removeAll { $0 == pane }
+                updated[i].panes.removeAll { $0 == item }
             }
         }
 
@@ -174,7 +293,24 @@ class SettingsManager: ObservableObject {
                 max(0, insertionIndex - (removedFromSameSidebarBeforeTarget ? 1 : 0)),
                 panes.count
             )
-            updated[targetSidebarIndex].panes.insert(pane, at: adjustedIndex)
+            updated[targetSidebarIndex].panes.insert(item, at: adjustedIndex)
+        }
+
+        sidebars = updated
+    }
+
+    func insertNotePane(fileURL: URL, toSidebar id: UUID, at insertionIndex: Int? = nil) {
+        guard shouldShowFile(fileURL) else { return }
+
+        var updated = sidebars
+        guard let sidebarIndex = updated.firstIndex(where: { $0.id == id }) else { return }
+
+        let pane = SidebarPaneItem.file(fileURL: fileURL)
+        if let insertionIndex {
+            let safeIndex = min(max(0, insertionIndex), updated[sidebarIndex].panes.count)
+            updated[sidebarIndex].panes.insert(pane, at: safeIndex)
+        } else {
+            updated[sidebarIndex].panes.append(pane)
         }
 
         sidebars = updated
@@ -182,6 +318,14 @@ class SettingsManager: ObservableObject {
 
     /// Remove a pane from a specific sidebar
     func removePane(_ pane: SidebarPane, fromSidebar id: UUID) {
+        var updated = sidebars
+        if let i = updated.firstIndex(where: { $0.id == id }) {
+            updated[i].panes.removeAll { $0.builtInPane == pane }
+        }
+        sidebars = updated
+    }
+
+    func removePaneItem(_ pane: SidebarPaneItem, fromSidebar id: UUID) {
         var updated = sidebars
         if let i = updated.firstIndex(where: { $0.id == id }) {
             updated[i].panes.removeAll { $0 == pane }
@@ -207,7 +351,7 @@ class SettingsManager: ObservableObject {
     }
 
     /// Apply a saved pane-assignment dictionary to the fixed sidebar list.
-    static func applyPaneAssignments(_ assignments: [String: [SidebarPane]]?) -> [Sidebar] {
+    static func applyPaneAssignments(_ assignments: [String: [SidebarPaneItem]]?) -> [Sidebar] {
         guard let assignments else { return FixedSidebar.all }
         return FixedSidebar.all.map { sidebar in
             let key = sidebar.id.uuidString
@@ -254,7 +398,7 @@ class SettingsManager: ObservableObject {
         var collapsedPanes: [String]?
         var collapsedSidebarIDs: [String]?
         /// Pane assignments: maps sidebar UUID string -> [SidebarPane]
-        var sidebarPaneAssignments: [String: [SidebarPane]]?
+        var sidebarPaneAssignments: [String: [SidebarPaneItem]]?
         var githubPAT: String?
         var fileTreeMode: String?
         var pinnedItems: [PinnedItem]?
@@ -277,7 +421,7 @@ class SettingsManager: ObservableObject {
             sidebarPaneHeights = try container.decodeIfPresent([String: CGFloat].self, forKey: .sidebarPaneHeights)
             collapsedPanes = try container.decodeIfPresent([String].self, forKey: .collapsedPanes)
             collapsedSidebarIDs = try container.decodeIfPresent([String].self, forKey: .collapsedSidebarIDs)
-            sidebarPaneAssignments = try container.decodeIfPresent([String: [SidebarPane]].self, forKey: .sidebarPaneAssignments)
+            sidebarPaneAssignments = try container.decodeIfPresent([String: [SidebarPaneItem]].self, forKey: .sidebarPaneAssignments)
             githubPAT = try container.decodeIfPresent(String.self, forKey: .githubPAT)
             fileTreeMode = try container.decodeIfPresent(String.self, forKey: .fileTreeMode)
             pinnedItems = try container.decodeIfPresent([PinnedItem].self, forKey: .pinnedItems)
@@ -361,7 +505,7 @@ class SettingsManager: ObservableObject {
         var sidebarPaneHeights: [String: CGFloat]?
         var collapsedPanes: [String]?
         var collapsedSidebarIDs: [String]?
-        var sidebarPaneAssignments: [String: [SidebarPane]]?
+        var sidebarPaneAssignments: [String: [SidebarPaneItem]]?
         var fileTreeMode: String?
 
         init(
@@ -369,7 +513,7 @@ class SettingsManager: ObservableObject {
             sidebarPaneHeights: [String: CGFloat]?,
             collapsedPanes: [String]?,
             collapsedSidebarIDs: [String]?,
-            sidebarPaneAssignments: [String: [SidebarPane]]?,
+            sidebarPaneAssignments: [String: [SidebarPaneItem]]?,
             fileTreeMode: String?
         ) {
             self.githubPAT = githubPAT
@@ -442,7 +586,7 @@ class SettingsManager: ObservableObject {
         }
     }
 
-    /// Initialize with vault root - stores settings in .noted/settings.yml
+    /// Initialize with vault root - stores settings in .synapse/settings.yml
     /// - Parameters:
     ///   - vaultRoot: The vault root URL (nil means use defaults)
     ///   - globalConfigPath: Optional path for global/sensitive settings (defaults to Application Support)
@@ -460,16 +604,16 @@ class SettingsManager: ObservableObject {
 
     /// Full initializer with vault root and global config path
     init(vaultRoot: URL?, globalConfigPath: String) {
-        self.configPath = vaultRoot?.appendingPathComponent(".noted/\(Self.vaultSettingsFilename)").path ?? globalConfigPath
+        self.configPath = vaultRoot?.appendingPathComponent(".synapse/\(Self.vaultSettingsFilename)").path ?? globalConfigPath
         self.vaultRootURL = vaultRoot
         self.globalConfigPath = globalConfigPath
 
         if let vaultRoot = vaultRoot {
             // Vault mode: load from both vault config and global config
-            let vaultConfigPath = vaultRoot.appendingPathComponent(".noted/\(Self.vaultSettingsFilename)").path
+            let vaultConfigPath = vaultRoot.appendingPathComponent(".synapse/\(Self.vaultSettingsFilename)").path
 
-            // Create .noted folder and settings file if they don't exist
-            let notedDir = vaultRoot.appendingPathComponent(".noted")
+            // Create .synapse folder and settings file if they don't exist
+            let notedDir = vaultRoot.appendingPathComponent(".synapse")
             if !FileManager.default.fileExists(atPath: notedDir.path) {
                 try? FileManager.default.createDirectory(at: notedDir, withIntermediateDirectories: true)
             }
@@ -665,7 +809,7 @@ class SettingsManager: ObservableObject {
         let dailyNotesOpenOnStartup: Bool
         let autoSave: Bool
         let autoPush: Bool
-        let sidebarPaneAssignments: [String: [SidebarPane]]
+        let sidebarPaneAssignments: [String: [SidebarPaneItem]]
         let sidebarPaneHeights: [String: CGFloat]
         let collapsedPanes: [String]
         let collapsedSidebarIDs: [String]
@@ -728,7 +872,7 @@ class SettingsManager: ObservableObject {
                 var dailyNotesOpenOnStartup: Bool?
                 var autoSave: Bool
                 var autoPush: Bool
-                var sidebarPaneAssignments: [String: [SidebarPane]]?
+                var sidebarPaneAssignments: [String: [SidebarPaneItem]]?
                 var sidebarPaneHeights: [String: CGFloat]?
                 var collapsedPanes: [String]?
                 var collapsedSidebarIDs: [String]?
@@ -787,7 +931,7 @@ class SettingsManager: ObservableObject {
                 hideMarkdownWhileEditing: hideMarkdownWhileEditing ? true : nil,
                 browserStartupURL: browserStartupURL.isEmpty ? nil : browserStartupURL
             )
-            let notedDir = vaultRootURL.appendingPathComponent(".noted")
+            let notedDir = vaultRootURL.appendingPathComponent(".synapse")
             try? FileManager.default.createDirectory(at: notedDir, withIntermediateDirectories: true)
             let vaultConfigURL = notedDir.appendingPathComponent(SettingsManager.vaultSettingsFilename)
             guard let vaultYAML = try? YAMLEncoder().encode(vaultConfig) else { return }

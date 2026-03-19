@@ -16,18 +16,18 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { theme, isDark, toggleTheme, followSystem, setFollowSystem } = useTheme();
   const [repoPath, setRepoPath] = useState<string | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
-  
+
   // Daily Note settings
   const [dailyNotesEnabled, setDailyNotesEnabled] = useState(false);
   const [dailyNotesOpenOnStartup, setDailyNotesOpenOnStartup] = useState(false);
   const [dailyNotesFolder, setDailyNotesFolder] = useState('daily');
   const [dailyNotesTemplate, setDailyNotesTemplate] = useState('');
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
-  
+
   // Template settings
   const [templatesDirectory, setTemplatesDirectory] = useState('templates');
   const [availableTemplates, setAvailableTemplates] = useState<string[]>([]);
-  
+
   // File browser settings
   const [fileExtensionFilter, setFileExtensionFilter] = useState('*.md, *.txt');
   const [hiddenFileFolderFilter, setHiddenFileFolderFilter] = useState('');
@@ -174,7 +174,7 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.colors.border }]}> 
+      <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
         <TouchableOpacity
           style={styles.backButtonHeader}
           onPress={() => navigation.goBack()}
@@ -288,13 +288,13 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
                 ]}
                 value={hiddenFileFolderFilter}
                 onChangeText={handleHiddenFileFolderFilterChange}
-                placeholder=".git, .noted"
+                placeholder=".git, .synapse"
                 placeholderTextColor={theme.colors.text + '60'}
               />
             </View>
 
             <Text style={[styles.hintText, { color: theme.colors.text, opacity: 0.5 }]}>
-              Filter which files appear in the sidebar. Use commas for multiple patterns or * for all files. Hide matching files/folders with patterns like .git, .noted
+              Filter which files appear in the sidebar. Use commas for multiple patterns or * for all files. Hide matching files/folders with patterns like .git, .synapse
             </Text>
           </View>
         </View>
@@ -408,8 +408,8 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
                 </View>
 
                 <Text style={[styles.hintText, { color: theme.colors.text, opacity: 0.5 }]}>
-                  {availableTemplates.length > 0 
-                    ? "Select a template from your templates folder" 
+                  {availableTemplates.length > 0
+                    ? "Select a template from your templates folder"
                     : "Place templates in the templates folder to select one"}
                 </Text>
               </>

@@ -108,7 +108,7 @@ final class SettingsManagerBrowserStartupURLTests: XCTestCase {
     // MARK: - Vault-specific isolation
 
     func test_browserStartupURL_isVaultSpecificSetting() {
-        // browserStartupURL is stored in the vault's .noted/settings.yml, so two
+        // browserStartupURL is stored in the vault's .synapse/settings.yml, so two
         // different vaults can each have their own browser start page.
         let vault1 = tempDir.appendingPathComponent("Vault1", isDirectory: true)
         let vault2 = tempDir.appendingPathComponent("Vault2", isDirectory: true)

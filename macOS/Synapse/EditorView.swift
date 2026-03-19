@@ -70,15 +70,22 @@ struct EditorView: View {
     /// When set, renders in read-only mode using these values instead of live appState.
     var readOnlyFile: URL? = nil
     var readOnlyContent: String? = nil
+    var editableFile: URL? = nil
+    var editableContent: Binding<String>? = nil
+    var editableIsDirty: Binding<Bool>? = nil
 
     @State private var embeddedNotes: [SidebarEmbedInfo] = []
     @State private var selectedEmbedID: String? = nil
     @State private var scrollToEmbedRange: NSRange? = nil
 
     private var isReadOnly: Bool { readOnlyFile != nil }
-    private var displayFile: URL? { readOnlyFile ?? appState.selectedFile }
-    private var displayContent: String { readOnlyContent ?? appState.fileContent }
-    private var isInViewMode: Bool { isReadOnly || !appState.isEditMode }
+    private var usesExternalEditableState: Bool { editableFile != nil && editableContent != nil }
+    private var displayFile: URL? { readOnlyFile ?? editableFile ?? appState.selectedFile }
+    private var displayContent: String { readOnlyContent ?? editableContent?.wrappedValue ?? appState.fileContent }
+    private var displayIsDirty: Bool { editableIsDirty?.wrappedValue ?? appState.isDirty }
+    private var activeTextBinding: Binding<String> { editableContent ?? $appState.fileContent }
+    private var participatesInGlobalEditorCommands: Bool { !usesExternalEditableState }
+    private var isInViewMode: Bool { isReadOnly || (participatesInGlobalEditorCommands && !appState.isEditMode) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,7 +96,7 @@ struct EditorView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 8)
 
-                    if !isInViewMode && appState.isSearchPresented && appState.searchMode == .currentFile {
+                    if participatesInGlobalEditorCommands && !isInViewMode && appState.isSearchPresented && appState.searchMode == .currentFile {
                         FindBar()
                             .environmentObject(appState)
                             .transition(.move(edge: .top).combined(with: .opacity))
@@ -100,6 +107,7 @@ struct EditorView: View {
                         if isInViewMode {
                             RawEditor(
                                 text: .constant(displayContent),
+                                currentFileURL: displayFile,
                                 isEditable: false,
                                 paneIndex: paneIndex,
                                 embeddedNotes: .constant([]),
@@ -109,13 +117,16 @@ struct EditorView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             RawEditor(
-                                text: $appState.fileContent,
+                                text: activeTextBinding,
+                                currentFileURL: displayFile,
                                 isEditable: true,
                                 hideMarkdown: appState.settings.hideMarkdownWhileEditing,
                                 paneIndex: paneIndex,
                                 embeddedNotes: $embeddedNotes,
                                 selectedEmbedID: $selectedEmbedID,
-                                scrollToRange: $scrollToEmbedRange
+                                scrollToRange: $scrollToEmbedRange,
+                                participatesInGlobalEditorCommands: participatesInGlobalEditorCommands,
+                                onDidEdit: markEditorDirty
                             )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
@@ -160,8 +171,16 @@ struct EditorView: View {
                     .padding(12)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: appState.isSearchPresented)
+        .animation(.easeInOut(duration: 0.15), value: participatesInGlobalEditorCommands ? appState.isSearchPresented : false)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func markEditorDirty() {
+        if let editableIsDirty {
+            editableIsDirty.wrappedValue = true
+        } else {
+            appState.isDirty = true
+        }
     }
 
     private var emptyState: some View {
@@ -226,7 +245,7 @@ struct EditorView: View {
             // Publish to Gist button (only when PAT is configured and not in read-only mode)
             if !isReadOnly && appState.settings.hasGitHubPAT {
                 Button(action: {
-                    let note = NoteContent(filename: file.lastPathComponent, content: appState.fileContent)
+                    let note = NoteContent(filename: file.lastPathComponent, content: displayContent)
                     appState.gistPublisher.publish(note, pat: appState.settings.githubPAT)
                 }) {
                     HStack(spacing: 4) {
@@ -241,7 +260,7 @@ struct EditorView: View {
                 .help("Publish this note to a public GitHub Gist")
             }
 
-            if appState.isDirty {
+            if displayIsDirty {
                 TinyBadge(text: "Editing", color: SynapseTheme.success)
             } else {
                 TinyBadge(text: "Synced")
@@ -254,12 +273,15 @@ struct EditorView: View {
 
 struct RawEditor: NSViewRepresentable {
     @Binding var text: String
+    var currentFileURL: URL? = nil
     var isEditable: Bool = true
     var hideMarkdown: Bool = false
     var paneIndex: Int = 0
     @Binding var embeddedNotes: [SidebarEmbedInfo]
     @Binding var selectedEmbedID: String?
     @Binding var scrollToRange: NSRange?
+    var participatesInGlobalEditorCommands: Bool = true
+    var onDidEdit: (() -> Void)? = nil
     @EnvironmentObject var appState: AppState
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -306,12 +328,16 @@ struct RawEditor: NSViewRepresentable {
         textView.textStorage?.delegate = context.coordinator
 
         context.coordinator.textView = textView
-        textView.installSearchObservers()
-        textView.installFocusObserver()
-        textView.installSaveCursorObserver(appState: context.coordinator.parent.appState)
-        textView.installCommandKObserver()
-        textView.onCommandPaletteFallback = { [weak appState] in
-            appState?.presentCommandPalette()
+        if participatesInGlobalEditorCommands {
+            textView.installSearchObservers()
+            textView.installFocusObserver()
+            textView.installSaveCursorObserver(appState: context.coordinator.parent.appState)
+            textView.installCommandKObserver()
+            textView.onCommandPaletteFallback = { [weak appState] in
+                appState?.presentCommandPalette()
+            }
+        } else {
+            textView.onCommandPaletteFallback = nil
         }
         
         // Set up wiki link callbacks
@@ -354,7 +380,7 @@ struct RawEditor: NSViewRepresentable {
         guard let textView = scrollView.documentView as? LinkAwareTextView else { return }
         // Set currentFileURL before setPlainText so applyCollapsibleStyling
         // looks up state for the correct file when the note changes.
-        textView.currentFileURL = appState.selectedFile
+        textView.currentFileURL = currentFileURL ?? appState.selectedFile
         textView.allFiles = appState.allFiles
         if textView.string != text {
             context.coordinator.suppressSync = true
@@ -400,7 +426,7 @@ struct RawEditor: NSViewRepresentable {
             // Access the binding directly from RawEditor
             self.selectedEmbedID = embedID
         }
-        textView.onMatchCountUpdate = { count in appState.searchMatchCount = count }
+        textView.onMatchCountUpdate = participatesInGlobalEditorCommands ? { count in appState.searchMatchCount = count } : nil
         textView.onActivatePane = isEditable ? nil : { appState.focusPane(paneIndex) }
         textView.refreshInlineImagePreviews()
 
@@ -429,21 +455,23 @@ struct RawEditor: NSViewRepresentable {
             }
         }
 
-        if let range = consumePendingCursorRange(from: appState, for: textView, paneIndex: paneIndex) {
-            let len = textView.string.count
-            let safeLoc = min(range.location, len)
-            let safeLen = min(range.length, len - safeLoc)
-            let safeRange = NSRange(location: safeLoc, length: safeLen)
-            textView.setSelectedRange(safeRange)
-            if let offset = consumePendingScrollOffset(from: appState, for: textView, paneIndex: paneIndex) {
-                restoreScrollOffset(offset, in: scrollView)
-            } else {
-                textView.scrollRangeToVisible(safeRange)
+        if participatesInGlobalEditorCommands {
+            if let range = consumePendingCursorRange(from: appState, for: textView, paneIndex: paneIndex) {
+                let len = textView.string.count
+                let safeLoc = min(range.location, len)
+                let safeLen = min(range.length, len - safeLoc)
+                let safeRange = NSRange(location: safeLoc, length: safeLen)
+                textView.setSelectedRange(safeRange)
+                if let offset = consumePendingScrollOffset(from: appState, for: textView, paneIndex: paneIndex) {
+                    restoreScrollOffset(offset, in: scrollView)
+                } else {
+                    textView.scrollRangeToVisible(safeRange)
+                }
+            } else if let position = consumePendingCursorPosition(from: appState, for: textView, paneIndex: paneIndex) {
+                let clamped = min(position, textView.string.count)
+                textView.setSelectedRange(NSRange(location: clamped, length: 0))
+                textView.scrollRangeToVisible(NSRange(location: clamped, length: 0))
             }
-        } else if let position = consumePendingCursorPosition(from: appState, for: textView, paneIndex: paneIndex) {
-            let clamped = min(position, textView.string.count)
-            textView.setSelectedRange(NSRange(location: clamped, length: 0))
-            textView.scrollRangeToVisible(NSRange(location: clamped, length: 0))
         }
 
         // Scroll editor to an embed range when triggered from the sidebar
@@ -457,7 +485,7 @@ struct RawEditor: NSViewRepresentable {
             DispatchQueue.main.async { self.scrollToRange = nil }
         }
 
-        if isEditable, let q = consumePendingSearchQuery(from: appState) {
+        if participatesInGlobalEditorCommands, isEditable, let q = consumePendingSearchQuery(from: appState) {
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
                     name: .scrollToSearchMatch,
@@ -482,10 +510,12 @@ struct RawEditor: NSViewRepresentable {
             guard let tv = textView else { return }
             let newText = tv.string
             if parent.text != newText {
-                // Fire objectWillChange once for both mutations to collapse two SwiftUI render passes into one
-                parent.appState.objectWillChange.send()
-                parent.appState.fileContent = newText  // same storage as parent.text binding
-                parent.appState.isDirty = true
+                parent.text = newText
+                if let onDidEdit = parent.onDidEdit {
+                    onDidEdit()
+                } else {
+                    parent.appState.isDirty = true
+                }
             }
             if !linkCheckScheduled {
                 linkCheckScheduled = true

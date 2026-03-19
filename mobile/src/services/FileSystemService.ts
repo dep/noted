@@ -32,7 +32,7 @@ export interface FileNode {
 
 export interface FileFilterOptions {
   fileExtensionFilter?: string;  // e.g., "*.md, *.txt"
-  hiddenFileFolderFilter?: string;  // e.g., ".git, .noted"
+  hiddenFileFolderFilter?: string;  // e.g., ".git, .synapse"
 }
 
 interface FileSystemEntity {
@@ -72,7 +72,7 @@ const normalizeFileUri = (inputPath: string): string => {
 
 function getFileSystemErrorType(error: Error): FileSystemErrorType {
   const message = error.message.toLowerCase();
-  
+
   if (message.includes('enoent') || message.includes('no such file') || message.includes('could not find')) {
     return FileSystemErrorType.NOT_FOUND;
   }
@@ -88,7 +88,7 @@ function getFileSystemErrorType(error: Error): FileSystemErrorType {
   if (message.includes('enotempty') || message.includes('not empty')) {
     return FileSystemErrorType.DIRECTORY_NOT_EMPTY;
   }
-  
+
   return FileSystemErrorType.UNKNOWN;
 }
 
@@ -183,20 +183,20 @@ export class FileSystemService {
   // Check if item matches hidden patterns
   private shouldHideItem(name: string, hiddenFilter: string): boolean {
     if (!hiddenFilter.trim()) return false;
-    
+
     const patterns = hiddenFilter
       .split(',')
       .map(p => p.trim())
       .filter(p => p.length > 0);
-    
+
     if (patterns.length === 0) return false;
-    
+
     return patterns.some(pattern => {
       // Convert glob pattern to regex
       const regexPattern = '^' + pattern
         .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
         .replace(/\*/g, '.*') + '$'; // Convert * to .*
-      
+
       try {
         const regex = new RegExp(regexPattern, 'i');
         return regex.test(name);
@@ -209,12 +209,12 @@ export class FileSystemService {
   // Check if file should be shown based on extension filter
   private shouldShowFile(filename: string, extensionFilter: string): boolean {
     const trimmed = extensionFilter.trim();
-    
+
     // Empty or wildcard means show all files
     if (!trimmed || trimmed === '*') {
       return true;
     }
-    
+
     const extensions = trimmed
       .split(',')
       .map(part => part.trim())
@@ -228,18 +228,18 @@ export class FileSystemService {
         return pattern.toLowerCase();
       })
       .filter(ext => ext.length > 0);
-    
+
     // Empty extensions means show all
     if (extensions.length === 0) {
       return true;
     }
-    
+
     // Get file extension
     const lastDotIndex = filename.lastIndexOf('.');
     if (lastDotIndex === -1) {
       return false; // No extension, doesn't match
     }
-    
+
     const fileExt = filename.substring(lastDotIndex + 1).toLowerCase();
     return extensions.includes(fileExt);
   }
@@ -277,7 +277,7 @@ export class FileSystemService {
       const content = await FileSystem.readAsStringAsync(normalizedPath, {
         encoding: FileSystem.EncodingType.UTF8,
       });
-      
+
       if (encoding === 'buffer') {
         return new TextEncoder().encode(content);
       }
@@ -291,7 +291,7 @@ export class FileSystemService {
   async writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
     try {
       const normalizedPath = normalizeFileUri(filePath);
-      
+
       // Ensure parent directory exists
       const dirPath = FileSystemService.dirname(filePath);
       if (dirPath !== '/' && !(await this.exists(dirPath))) {
@@ -318,21 +318,21 @@ export class FileSystemService {
     try {
       const normalizedPath = normalizeFileUri(filePath);
       const info = await FileSystem.getInfoAsync(normalizedPath);
-      
+
       if (!info.exists) {
         throw new FileSystemError(
           'File not found',
           FileSystemErrorType.NOT_FOUND
         );
       }
-      
+
       if (info.isDirectory) {
         throw new FileSystemError(
           'Cannot delete directory using deleteFile, use deleteDirectory instead',
           FileSystemErrorType.IS_DIRECTORY
         );
       }
-      
+
       await FileSystem.deleteAsync(normalizedPath, { idempotent: true });
     } catch (error) {
       if (error instanceof FileSystemError) {
@@ -346,7 +346,7 @@ export class FileSystemService {
   async createDirectory(dirPath: string, options?: { recursive?: boolean }): Promise<void> {
     try {
       const normalizedPath = normalizeFileUri(dirPath);
-      
+
       await FileSystem.makeDirectoryAsync(normalizedPath, {
         intermediates: options?.recursive ?? false,
       });
@@ -359,8 +359,8 @@ export class FileSystemService {
   async deleteDirectory(dirPath: string, options?: { recursive?: boolean }): Promise<void> {
     try {
       const normalizedPath = normalizeFileUri(dirPath);
-      
-      await FileSystem.deleteAsync(normalizedPath, { 
+
+      await FileSystem.deleteAsync(normalizedPath, {
         idempotent: true,
       });
     } catch (error) {
@@ -396,7 +396,7 @@ export class FileSystemService {
       const normalizedPath = normalizeFileUri(rootPath);
       const name = FileSystemService.basename(normalizedPath);
       const entries = await this.listFiles(normalizedPath, filters);
-      
+
       return {
         path: normalizedPath,
         name,
@@ -411,10 +411,10 @@ export class FileSystemService {
   // Get flat file list (all files without hierarchy)
   async getFlatFileList(dirPath: string, filters?: FileFilterOptions): Promise<FileNode[]> {
     const files: FileNode[] = [];
-    
+
     const traverse = async (path: string) => {
       const entries = await this.listDirectory(path, filters);
-      
+
       for (const entry of entries) {
         if (entry.isDirectory) {
           // Check if directory should be hidden
@@ -427,7 +427,7 @@ export class FileSystemService {
         }
       }
     };
-    
+
     await traverse(dirPath);
     return files;
   }
@@ -444,7 +444,7 @@ export class FileSystemService {
       }
       return firstPath.replace(/\/+$/, '') + '/' + remainingPaths.join('/');
     }
-    
+
     // For regular paths, join with leading /
     const normalized = paths.map(p => p.replace(/^\/+|\/+$/g, '')).filter(Boolean);
     return '/' + normalized.join('/');
@@ -529,7 +529,7 @@ export class FileSystemService {
       for (const file of allFiles) {
         // Get the filename without extension
         const fileNameWithoutExt = file.name.toLowerCase().replace(/\.md$/, '');
-        
+
         if (fileNameWithoutExt === normalizedTarget) {
           return file.path;
         }

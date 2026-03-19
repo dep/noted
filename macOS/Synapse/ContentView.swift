@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 func shouldConsumePaneSwitchShortcut(
     keyCode: UInt16,
@@ -22,6 +23,107 @@ func shouldConsumePaneSwitchShortcut(
     case .horizontal:
         return keyCode == KeyCode.downArrow || keyCode == KeyCode.upArrow
     }
+}
+
+private enum SidebarDropPayload {
+    case item(SidebarPaneItem)
+    case file(URL)
+}
+
+func sidebarFileItemProvider(for fileURL: URL) -> NSItemProvider {
+    NSItemProvider(object: fileURL as NSURL)
+}
+
+private let sidebarItemTokenPrefix = "synapse-sidebar-item:"
+
+private func sidebarPaneItemProvider(for item: SidebarPaneItem) -> NSItemProvider {
+    NSItemProvider(object: sidebarItemToken(for: item) as NSString)
+}
+
+private func sidebarItemToken(for item: SidebarPaneItem) -> String {
+    let data = (try? JSONEncoder().encode(item)) ?? Data()
+    return sidebarItemTokenPrefix + data.base64EncodedString()
+}
+
+private func sidebarItem(from token: String) -> SidebarPaneItem? {
+    guard token.hasPrefix(sidebarItemTokenPrefix) else { return nil }
+    let encoded = String(token.dropFirst(sidebarItemTokenPrefix.count))
+    guard let data = Data(base64Encoded: encoded) else { return nil }
+    return try? JSONDecoder().decode(SidebarPaneItem.self, from: data)
+}
+
+private func canHandleSidebarDrop(_ providers: [NSItemProvider]) -> Bool {
+    providers.contains {
+        $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ||
+        $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+    }
+}
+
+private func loadSidebarDropPayload(from providers: [NSItemProvider], completion: @escaping (SidebarDropPayload?) -> Void) {
+    guard let provider = providers.first(where: {
+        $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ||
+        $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+    }) else {
+        completion(nil)
+        return
+    }
+
+    if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            completion(extractSidebarFileURL(from: item).map(SidebarDropPayload.file))
+        }
+        return
+    }
+
+    provider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
+        let raw: String?
+        if let data = item as? Data {
+            raw = String(data: data, encoding: .utf8)
+        } else if let string = item as? String {
+            raw = string
+        } else {
+            raw = nil
+        }
+
+        if let raw, let item = sidebarItem(from: raw) {
+            completion(.item(item))
+            return
+        }
+
+        if let raw, let pane = SidebarPane(rawValue: raw) {
+            completion(.item(.builtIn(pane)))
+            return
+        }
+
+        completion(extractSidebarFileURL(from: item).map(SidebarDropPayload.file))
+    }
+}
+
+private func extractSidebarFileURL(from item: Any?) -> URL? {
+    if let data = item as? Data {
+        return URL(dataRepresentation: data, relativeTo: nil)?.standardizedFileURL
+    }
+
+    if let url = item as? URL {
+        return url.standardizedFileURL
+    }
+
+    if let nsURL = item as? NSURL {
+        return (nsURL as URL).standardizedFileURL
+    }
+
+    if let string = item as? String {
+        if let url = URL(string: string), url.isFileURL {
+            return url.standardizedFileURL
+        }
+
+        let expandedPath = (string as NSString).expandingTildeInPath
+        if expandedPath.hasPrefix("/") {
+            return URL(fileURLWithPath: expandedPath).standardizedFileURL
+        }
+    }
+
+    return nil
 }
 
 struct ContentView: View {
@@ -901,8 +1003,8 @@ struct DynamicSidebarView: View {
                         }
                     } else {
                         VStack(spacing: 0) {
-                            ForEach(Array(sidebar.panes.enumerated()), id: \.element) { index, pane in
-                                let collapsed = settings.collapsedPanes.contains(pane.rawValue)
+                            ForEach(Array(sidebar.panes.enumerated()), id: \.element.id) { index, pane in
+                                let collapsed = settings.collapsedPanes.contains(pane.storageKey)
                                 let paneH = collapsed
                                     ? SidebarPaneWrapper.headerHeight
                                     : expandedHeight(for: pane, total: geo.size.height)
@@ -912,14 +1014,14 @@ struct DynamicSidebarView: View {
 
                                 if index < sidebar.panes.count - 1 {
                                     let next = sidebar.panes[index + 1]
-                                    let eitherCollapsed = collapsed || settings.collapsedPanes.contains(next.rawValue)
+                                    let eitherCollapsed = collapsed || settings.collapsedPanes.contains(next.storageKey)
                                     ResizeDivider(disabled: eitherCollapsed, axis: .horizontal) { delta in
                                         let cur  = expandedHeight(for: pane, total: geo.size.height)
                                         let nxt  = expandedHeight(for: next, total: geo.size.height)
                                         let newCur = cur + delta; let newNxt = nxt - delta
                                         guard newCur >= 80 && newNxt >= 80 else { return }
-                                        settings.sidebarPaneHeights[pane.rawValue] = newCur
-                                        settings.sidebarPaneHeights[next.rawValue] = newNxt
+                                        settings.sidebarPaneHeights[pane.storageKey] = newCur
+                                        settings.sidebarPaneHeights[next.storageKey] = newNxt
                                     }
                                 }
                             }
@@ -934,18 +1036,8 @@ struct DynamicSidebarView: View {
             railToggle(compact: false)
                 .offset(x: sidebar.position == .left ? 9 : -9)
         }
-        .onDrop(of: [.plainText], isTargeted: $isDropTarget) { providers in
-            guard let provider = providers.first else { return false }
-            provider.loadItem(forTypeIdentifier: "public.plain-text", options: nil) { item, _ in
-                let raw: String?
-                if let data = item as? Data { raw = String(data: data, encoding: .utf8) }
-                else if let s = item as? String { raw = s }
-                else { raw = nil }
-                guard let raw, let pane = SidebarPane(rawValue: raw),
-                      !sidebar.panes.contains(pane) else { return }
-                DispatchQueue.main.async { settings.assignPane(pane, toSidebar: sidebar.id) }
-            }
-            return true
+        .onDrop(of: [.plainText, .fileURL], isTargeted: $isDropTarget) { providers in
+            insertDroppedItem(providers: providers)
         }
     }
 
@@ -968,18 +1060,44 @@ struct DynamicSidebarView: View {
         .padding(.horizontal, compact ? 4 : 0)
     }
 
-    private func expandedHeight(for pane: SidebarPane, total: CGFloat) -> CGFloat {
-        let expanded = sidebar.panes.filter { !settings.collapsedPanes.contains($0.rawValue) }
+    private func expandedHeight(for pane: SidebarPaneItem, total: CGFloat) -> CGFloat {
+        let expanded = sidebar.panes.filter { !settings.collapsedPanes.contains($0.storageKey) }
         let collapsedCount = sidebar.panes.count - expanded.count
         let divSpace    = CGFloat(max(0, sidebar.panes.count - 1)) * 6
         let collSpace   = CGFloat(collapsedCount) * SidebarPaneWrapper.headerHeight
         let available   = max(0, total - divSpace - collSpace)
         guard !expanded.isEmpty else { return SidebarPaneWrapper.headerHeight }
-        let totalStored = expanded.compactMap { settings.sidebarPaneHeights[$0.rawValue] }.reduce(0, +)
-        if totalStored > 0, let stored = settings.sidebarPaneHeights[pane.rawValue] {
+        let totalStored = expanded.compactMap { settings.sidebarPaneHeights[$0.storageKey] }.reduce(0, +)
+        if totalStored > 0, let stored = settings.sidebarPaneHeights[pane.storageKey] {
             return max(80, available * (stored / totalStored))
         }
         return max(80, available / CGFloat(expanded.count))
+    }
+
+    private func insertDroppedItem(providers: [NSItemProvider]) -> Bool {
+        guard canHandleSidebarDrop(providers) else { return false }
+
+        loadSidebarDropPayload(from: providers) { payload in
+            DispatchQueue.main.async {
+                switch payload {
+                case .item(let item):
+                    switch item {
+                    case .builtIn(let pane):
+                        guard !sidebar.panes.contains(pane) else { return }
+                        settings.assignPane(pane, toSidebar: sidebar.id)
+                    case .note:
+                        settings.movePaneItem(item, toSidebar: sidebar.id, at: sidebar.panes.count)
+                    }
+                case .file(let fileURL):
+                    guard settings.shouldShowFile(fileURL) else { return }
+                    settings.insertNotePane(fileURL: fileURL, toSidebar: sidebar.id)
+                case nil:
+                    return
+                }
+            }
+        }
+
+        return true
     }
 }
 
@@ -987,7 +1105,7 @@ struct DynamicSidebarView: View {
 /// Uses a plain (non-@ObservedObject) SettingsManager ref so mutations elsewhere
 /// don't re-evaluate the expensive pane body.
 struct SidebarPaneInContainer: View {
-    let pane: SidebarPane
+    let pane: SidebarPaneItem
     let sidebarId: UUID
     let settings: SettingsManager   // plain ref — no observation
 
@@ -1023,15 +1141,7 @@ struct SidebarPaneInContainer: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onDrag {
-                    NSItemProvider(object: pane.rawValue as NSString)
-                } preview: {
-                    Text(pane.title)
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(SynapseTheme.accent, in: RoundedRectangle(cornerRadius: 6))
-                }
+                .modifier(SidebarPaneDragModifier(pane: pane))
 
                 // Remove button — visible on hover
                 Button { showRemoveConfirmation = true } label: {
@@ -1059,14 +1169,14 @@ struct SidebarPaneInContainer: View {
         }
         .contentShape(Rectangle())
         .background(isDropTarget ? SynapseTheme.accent.opacity(0.10) : Color.clear)
-        .onDrop(of: [.plainText], isTargeted: $isDropTarget) { providers in
+        .onDrop(of: [.plainText, .fileURL], isTargeted: $isDropTarget) { providers in
             insertDroppedPane(providers: providers)
         }
-        .onAppear { isCollapsed = settings.collapsedPanes.contains(pane.rawValue) }
+        .onAppear { isCollapsed = settings.collapsedPanes.contains(pane.storageKey) }
         .alert("Remove Pane?", isPresented: $showRemoveConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Remove", role: .destructive) {
-                settings.removePane(pane, fromSidebar: sidebarId)
+                settings.removePaneItem(pane, fromSidebar: sidebarId)
             }
         } message: {
             Text("\"\(pane.title)\" will be removed from this sidebar.")
@@ -1076,43 +1186,67 @@ struct SidebarPaneInContainer: View {
     @ViewBuilder
     private var paneContent: some View {
         switch pane {
-        case .files:    FileTreeView(settings: settings)
-        case .tags:     TagsPaneView()
-        case .links:    RelatedLinksPaneView()
-        case .terminal: TerminalPaneView()
-        case .graph:    GraphPaneView()
-        case .browser:  MiniBrowserPaneView()
+        case .builtIn(let builtInPane):
+            switch builtInPane {
+            case .files:    FileTreeView(settings: settings)
+            case .tags:     TagsPaneView()
+            case .links:    RelatedLinksPaneView()
+            case .terminal: TerminalPaneView()
+            case .graph:    GraphPaneView()
+            case .browser:  MiniBrowserPaneView()
+            }
+        case .note(let notePane):
+            SidebarNotePaneView(notePane: notePane)
         }
     }
 
     private func toggleCollapsed() {
         isCollapsed.toggle()
         if isCollapsed {
-            settings.collapsedPanes.insert(pane.rawValue)
+            settings.collapsedPanes.insert(pane.storageKey)
         } else {
-            settings.collapsedPanes.remove(pane.rawValue)
+            settings.collapsedPanes.remove(pane.storageKey)
         }
     }
 
     private func insertDroppedPane(providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
-        provider.loadItem(forTypeIdentifier: "public.plain-text", options: nil) { item, _ in
-            let raw: String?
-            if let data = item as? Data {
-                raw = String(data: data, encoding: .utf8)
-            } else if let string = item as? String {
-                raw = string
-            } else {
-                raw = nil
-            }
+        guard canHandleSidebarDrop(providers) else { return false }
 
-            guard let raw, let draggedPane = SidebarPane(rawValue: raw) else { return }
+        loadSidebarDropPayload(from: providers) { payload in
             DispatchQueue.main.async {
                 guard let sidebar = settings.sidebars.first(where: { $0.id == sidebarId }),
                       let targetIndex = sidebar.panes.firstIndex(of: pane) else { return }
-                settings.movePane(draggedPane, toSidebar: sidebarId, at: targetIndex)
+
+                switch payload {
+                case .item(let item):
+                    settings.movePaneItem(item, toSidebar: sidebarId, at: targetIndex)
+                case .file(let fileURL):
+                    guard settings.shouldShowFile(fileURL) else { return }
+                    settings.insertNotePane(fileURL: fileURL, toSidebar: sidebarId, at: targetIndex)
+                case nil:
+                    return
+                }
             }
         }
+
         return true
+    }
+}
+
+private struct SidebarPaneDragModifier: ViewModifier {
+    let pane: SidebarPaneItem
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        content.onDrag {
+            sidebarPaneItemProvider(for: pane)
+        } preview: {
+            Text(pane.title)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(SynapseTheme.accent, in: RoundedRectangle(cornerRadius: 6))
+        }
     }
 }

@@ -82,8 +82,8 @@ final class SettingsPersistenceTests: XCTestCase {
     // MARK: - Vault config round-trip
 
     func test_vaultConfig_bothSettingsPersistViaYAML() {
-        // Create a vault directory with a .noted folder.
-        let notedDir = tempDir.appendingPathComponent(".noted", isDirectory: true)
+        // Create a vault directory with a .synapse folder.
+        let notedDir = tempDir.appendingPathComponent(".synapse", isDirectory: true)
         try! FileManager.default.createDirectory(at: notedDir, withIntermediateDirectories: true)
 
         let vaultSettings = SettingsManager(vaultRoot: tempDir, globalConfigPath: configFilePath)

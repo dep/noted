@@ -20,7 +20,7 @@ enum KeyCode {
 
 enum AppConstants {
     /// Vault-local config directory name
-    static let vaultConfigDirectory = ".noted"
+    static let vaultConfigDirectory = ".synapse"
     /// Image paste directory name
     static let imagesPasteDirectory = ".images"
     /// Default file extension filter

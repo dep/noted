@@ -41,20 +41,20 @@ final class SettingsManagerApplyPaneAssignmentsTests: XCTestCase {
         let result = SettingsManager.applyPaneAssignments(nil)
         let right2 = result.first { $0.id == FixedSidebar.right2ID }!
 
-        XCTAssertEqual(right2.panes, [.browser])
+        XCTAssertEqual(right2.panes, [.builtIn(.browser)])
     }
 
     // MARK: - Partial override — only one sidebar remapped
 
     func test_applyPaneAssignments_partialOverride_updatesOnlySpecifiedSidebar() {
-        let assignments: [String: [SidebarPane]] = [
-            FixedSidebar.leftID.uuidString: [.files, .tags]
+        let assignments: [String: [SidebarPaneItem]] = [
+            FixedSidebar.leftID.uuidString: [.builtIn(.files), .builtIn(.tags)]
         ]
 
         let result = SettingsManager.applyPaneAssignments(assignments)
 
         let left = result.first { $0.id == FixedSidebar.leftID }!
-        XCTAssertEqual(left.panes, [.files, .tags],
+        XCTAssertEqual(left.panes, [.builtIn(.files), .builtIn(.tags)],
                        "Left sidebar should use the provided assignment")
 
         let right1 = result.first { $0.id == FixedSidebar.right1ID }!
@@ -65,10 +65,10 @@ final class SettingsManagerApplyPaneAssignmentsTests: XCTestCase {
     // MARK: - Full override
 
     func test_applyPaneAssignments_fullOverride_appliesAllSidebars() {
-        let assignments: [String: [SidebarPane]] = [
-            FixedSidebar.leftID.uuidString:   [.graph],
-            FixedSidebar.right1ID.uuidString: [.browser, .links],
-            FixedSidebar.right2ID.uuidString: [.files, .terminal, .tags]
+        let assignments: [String: [SidebarPaneItem]] = [
+            FixedSidebar.leftID.uuidString:   [.builtIn(.graph)],
+            FixedSidebar.right1ID.uuidString: [.builtIn(.browser), .builtIn(.links)],
+            FixedSidebar.right2ID.uuidString: [.builtIn(.files), .builtIn(.terminal), .builtIn(.tags)]
         ]
 
         let result = SettingsManager.applyPaneAssignments(assignments)
@@ -77,15 +77,15 @@ final class SettingsManagerApplyPaneAssignmentsTests: XCTestCase {
         let right1 = result.first { $0.id == FixedSidebar.right1ID }!
         let right2 = result.first { $0.id == FixedSidebar.right2ID }!
 
-        XCTAssertEqual(left.panes,   [.graph])
-        XCTAssertEqual(right1.panes, [.browser, .links])
-        XCTAssertEqual(right2.panes, [.files, .terminal, .tags])
+        XCTAssertEqual(left.panes,   [.builtIn(.graph)])
+        XCTAssertEqual(right1.panes, [.builtIn(.browser), .builtIn(.links)])
+        XCTAssertEqual(right2.panes, [.builtIn(.files), .builtIn(.terminal), .builtIn(.tags)])
     }
 
     // MARK: - Empty pane list is valid
 
     func test_applyPaneAssignments_emptyPaneList_producesEmptySidebar() {
-        let assignments: [String: [SidebarPane]] = [
+        let assignments: [String: [SidebarPaneItem]] = [
             FixedSidebar.leftID.uuidString: []
         ]
 
@@ -99,8 +99,8 @@ final class SettingsManagerApplyPaneAssignmentsTests: XCTestCase {
 
     func test_applyPaneAssignments_unknownKey_isIgnored() {
         let bogusKey = UUID().uuidString
-        let assignments: [String: [SidebarPane]] = [
-            bogusKey: [.graph, .browser]
+        let assignments: [String: [SidebarPaneItem]] = [
+            bogusKey: [.builtIn(.graph), .builtIn(.browser)]
         ]
 
         let result = SettingsManager.applyPaneAssignments(assignments)

@@ -11,6 +11,7 @@ struct TabBarView: View {
             } else {
                 ForEach(Array(appState.tabs.enumerated()), id: \.offset) { index, tab in
                     TabItemView(
+                        tab: tab,
                         displayName: tab.displayName,
                         isActive: index == appState.activeTabIndex,
                         onSelect: { appState.switchTab(to: index) },
@@ -34,6 +35,7 @@ struct TabBarView: View {
 }
 
 struct TabItemView: View {
+    let tab: TabItem
     let displayName: String
     let isActive: Bool
     let onSelect: () -> Void
@@ -77,6 +79,22 @@ struct TabItemView: View {
         }
         .onTapGesture {
             onSelect()
+        }
+        .modifier(TabDragModifier(fileURL: tab.fileURL))
+    }
+}
+
+private struct TabDragModifier: ViewModifier {
+    let fileURL: URL?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let fileURL {
+            content.onDrag {
+                sidebarFileItemProvider(for: fileURL)
+            }
+        } else {
+            content
         }
     }
 }
