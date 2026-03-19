@@ -379,6 +379,20 @@ struct RawEditor: NSViewRepresentable {
                 appState.openFile(url)
             }
         }
+        textView.onOpenTag = { tag, openInNewTab in
+            if openInNewTab {
+                appState.openTagInNewTab(tag)
+            } else {
+                // For opening in current tab, we need to switch to tag view
+                // First check if tag already exists in tabs
+                if let existingIndex = appState.tabs.firstIndex(of: .tag(tag)) {
+                    appState.switchTab(to: existingIndex)
+                } else {
+                    // Create new tag tab and switch to it
+                    appState.openTagInNewTab(tag)
+                }
+            }
+        }
         textView.onOpenExternalURL = { url in
             NSWorkspace.shared.open(url)
         }
@@ -546,6 +560,7 @@ private enum MarkdownTheme {
 /// Custom attribute key for wiki links — avoids NSTextView overriding our foreground color via linkTextAttributes.
 extension NSAttributedString.Key {
     static let wikilinkTarget = NSAttributedString.Key("Synapse.wikilinkTarget")
+    static let tagTarget = NSAttributedString.Key("Synapse.tagTarget")
 }
 
 /// Thread-safe regex cache for markdown styling outside of LinkAwareTextView.
@@ -636,6 +651,7 @@ func styleMarkdownContent(_ content: String, fontSize: CGFloat = 12) -> NSAttrib
     // Inline tags
     AppState.inlineTagMatches(in: content).forEach { match in
         storage.addAttribute(.foregroundColor, value: MarkdownTheme.tagColor, range: match.range)
+        storage.addAttribute(.tagTarget, value: match.normalized, range: match.range)
     }
     // Wiki links
     applyPattern("\\[\\[[^\\]]+\\]\\]") { range in
@@ -989,6 +1005,7 @@ extension LinkAwareTextView {
         }
         AppState.inlineTagMatches(in: storage.string).forEach { match in
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.tagColor, range: match.range)
+            storage.addAttribute(.tagTarget, value: match.normalized, range: match.range)
         }
         // Style embed patterns (![[note]]) - dimmed since they'll be rendered as blocks below
         applyRegex("!\\[\\[[^\\]]+\\]\\]", to: text, storage: storage) { range in
@@ -1318,6 +1335,7 @@ class LinkAwareTextView: NSTextView {
 
     var allFiles: [URL] = []
     var onOpenFile: ((URL, Bool) -> Void)?
+    var onOpenTag: ((String, Bool) -> Void)?  // (tag, openInNewTab)
     var onActivatePane: (() -> Void)?
     var onCreateNote: ((String, URL?) -> Void)?  // name, preferred directory
     var onOpenExternalURL: ((URL) -> Void)?  // External URL opening (defaults to NSWorkspace)
@@ -1387,6 +1405,13 @@ class LinkAwareTextView: NSTextView {
             _ = handleLinkClick(target, openInNewTab: openInNewTab)
             return
         }
+        
+        // Check if clicking on a tag
+        if let tag = tagTarget(at: point) {
+            let openInNewTab = event.modifierFlags.contains(.command)
+            _ = handleTagClick(tag, openInNewTab: openInNewTab)
+            return
+        }
         super.mouseDown(with: event)
     }
 
@@ -1447,6 +1472,28 @@ class LinkAwareTextView: NSTextView {
         guard glyphRect.contains(containerPoint) else { return nil }
 
         return textStorage?.attribute(.wikilinkTarget, at: charIndex, effectiveRange: nil) as? String
+    }
+
+    func tagTarget(at viewPoint: NSPoint) -> String? {
+        guard let layout = layoutManager, let container = textContainer else { return nil }
+
+        let containerPoint = NSPoint(
+            x: viewPoint.x - textContainerOrigin.x,
+            y: viewPoint.y - textContainerOrigin.y
+        )
+        var fraction: CGFloat = 0
+        let charIndex = layout.characterIndex(
+            for: containerPoint,
+            in: container,
+            fractionOfDistanceBetweenInsertionPoints: &fraction
+        )
+        guard charIndex < (string as NSString).length else { return nil }
+
+        let glyphIndex = layout.glyphIndexForCharacter(at: charIndex)
+        let glyphRect = layout.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: container)
+        guard glyphRect.contains(containerPoint) else { return nil }
+
+        return textStorage?.attribute(.tagTarget, at: charIndex, effectiveRange: nil) as? String
     }
 
     // MARK: - Focus support
@@ -2079,6 +2126,12 @@ class LinkAwareTextView: NSTextView {
 
         // Unresolved — create a new note with this name in the same folder as the current file.
         onCreateNote?(name, currentFileURL?.deletingLastPathComponent())
+        return true
+    }
+
+    func handleTagClick(_ tag: String, openInNewTab: Bool) -> Bool {
+        guard !tag.isEmpty else { return false }
+        onOpenTag?(tag, openInNewTab)
         return true
     }
 
