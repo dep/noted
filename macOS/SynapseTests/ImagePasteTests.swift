@@ -61,6 +61,16 @@ final class ImagePasteTests: XCTestCase {
 
     func test_performKeyEquivalent_withCommandV_routesToPaste() {
         let textView = PasteTrackingTextView()
+        
+        // Create a window and make the text view the first responder so performKeyEquivalent works
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = textView
+        window.makeFirstResponder(textView)
 
         let event = NSEvent.keyEvent(
             with: .keyDown,
