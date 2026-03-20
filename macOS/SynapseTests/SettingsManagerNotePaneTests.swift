@@ -116,7 +116,7 @@ final class SettingsManagerNotePaneTests: XCTestCase {
 
     func test_insertNotePane_hiddenFile_isNotInserted() {
         // Configure the filter so that ".hidden.md" is excluded.
-        sut.hiddenFileFolderFilter = ".hidden"
+        sut.hiddenFileFolderFilter = ".hidden*"
 
         let hiddenFile = tempDir.appendingPathComponent(".hidden.md")
         try! "secret".write(to: hiddenFile, atomically: true, encoding: .utf8)
