@@ -145,6 +145,34 @@ final class WikiLinkClickTests: XCTestCase {
         XCTAssertEqual(openedFiles.first?.url, noteURL, "Should resolve heading anchor and open correct note")
     }
 
+    func test_handleLinkClick_caseInsensitive_resolvesNote() {
+        // Arrange — file on disk is mixed-case, link text is all lowercase
+        let noteURL = makeNote(named: "TargetNote")
+        textView.allFiles = [noteURL]
+
+        // Act — link text casing differs from filename
+        let result = textView.handleLinkClick("targetnote", openInNewTab: false)
+
+        // Assert
+        XCTAssertTrue(result, "handleLinkClick should return true for case-insensitive match")
+        XCTAssertEqual(openedFiles.count, 1, "Should have opened exactly one file")
+        XCTAssertEqual(openedFiles.first?.url, noteURL, "Should resolve note regardless of link text casing")
+    }
+
+    func test_handleLinkClick_uppercasedLink_resolvesLowercaseFilename() {
+        // Arrange — file on disk is all lowercase, link text is uppercased
+        let noteURL = makeNote(named: "my-note")
+        textView.allFiles = [noteURL]
+
+        // Act
+        let result = textView.handleLinkClick("MY-NOTE", openInNewTab: false)
+
+        // Assert
+        XCTAssertTrue(result, "handleLinkClick should return true for case-insensitive match")
+        XCTAssertEqual(openedFiles.count, 1, "Should have opened exactly one file")
+        XCTAssertEqual(openedFiles.first?.url, noteURL, "Should resolve note regardless of link text casing")
+    }
+
     func test_wikilinkTarget_atViewPoint_resolvesPointInsideRenderedLink() {
         let noteURL = makeNote(named: "TargetNote")
         textView.allFiles = [noteURL]

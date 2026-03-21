@@ -2490,7 +2490,7 @@ class LinkAwareTextView: NSTextView {
             .flatMap { $0.components(separatedBy: "#").first }
             .map { $0.trimmingCharacters(in: .whitespaces) } ?? inner
 
-        if let match = allFiles.first(where: { $0.deletingPathExtension().lastPathComponent == name }) {
+        if let match = allFiles.first(where: { $0.deletingPathExtension().lastPathComponent.lowercased() == name.lowercased() }) {
             onOpenFile?(match, openInNewTab)
             return true
         }
