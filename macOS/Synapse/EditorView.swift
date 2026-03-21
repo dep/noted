@@ -3123,17 +3123,20 @@ class LinkAwareTextView: NSTextView {
 
     // MARK: - HTML to Markdown Conversion
 
-    /// Converts HTML pasteboard content to Markdown and inserts it
+    /// Converts HTML pasteboard content to Markdown and inserts it.
+    /// Checks dedicated HTML pasteboard types first, then falls back to
+    /// checking whether the plain-text payload looks like HTML (e.g. when
+    /// copying raw HTML source from a text editor or terminal).
     @discardableResult
     func handleHTMLPaste(from pasteboard: NSPasteboard) -> Bool {
-        // Try multiple HTML pasteboard types that different apps use
+        // 1. Try dedicated HTML pasteboard types (browser copies, rich-text apps).
         let htmlTypes: [NSPasteboard.PasteboardType] = [
             .html,
             NSPasteboard.PasteboardType("public.html"),
             NSPasteboard.PasteboardType("Apple HTML pasteboard type"),
             NSPasteboard.PasteboardType("NSHTMLPboardType"),
         ]
-        
+
         var htmlString: String? = nil
         for type in htmlTypes {
             if let str = pasteboard.string(forType: type) {
@@ -3141,524 +3144,209 @@ class LinkAwareTextView: NSTextView {
                 break
             }
         }
-        
+
+        // 2. Fallback: plain-text that looks like HTML (raw source pasted from
+        //    a terminal, VS Code, etc.). Require at least one structural tag so
+        //    we don't accidentally convert markdown or code that uses < >.
+        if htmlString == nil, let plain = pasteboard.string(forType: .string) {
+            if looksLikeHTML(plain) {
+                htmlString = plain
+            }
+        }
+
         guard let html = htmlString, !html.isEmpty else {
             return false
         }
-        
-        // Debug logging to help diagnose issues
+
         #if DEBUG
-        print("[HTML Paste] Found HTML content")
-        print("[HTML Paste] Content preview: \(html.prefix(200))")
+        print("[HTML Paste] Source: \(html.prefix(300))")
         #endif
-        
-        // Convert HTML to Markdown
+
         let markdown = HTMLToMarkdownConverter.convert(html)
-        
+
         #if DEBUG
-        print("[HTML Paste] Converted to Markdown: \(markdown.prefix(200))")
+        print("[HTML Paste] Result: \(markdown.prefix(300))")
         #endif
-        
-        // Insert at current cursor position
+
         let currentRange = selectedRange()
-        if shouldChangeText(in: currentRange, replacementString: markdown) {
-            replaceCharacters(in: currentRange, with: markdown)
-            didChangeText()
-            return true
+        guard shouldChangeText(in: currentRange, replacementString: markdown) else {
+            return false
         }
-        
-        return false
+        replaceCharacters(in: currentRange, with: markdown)
+        didChangeText()
+        return true
+    }
+
+    /// Returns true if the string contains at least one structural HTML tag
+    /// that makes it worth attempting conversion.
+    private func looksLikeHTML(_ text: String) -> Bool {
+        let structural = ["<ul", "<ol", "<li", "<p>", "<p ", "<h1", "<h2",
+                          "<h3", "<h4", "<h5", "<h6", "<table", "<div",
+                          "<blockquote", "<pre", "<code"]
+        let lower = text.lowercased()
+        return structural.contains { lower.contains($0) }
     }
 }
 
 // MARK: - HTML to Markdown Converter
 
-/// Converts HTML content to Markdown format
+/// Converts HTML content to Markdown using NSAttributedString for correct parsing,
+/// then walks the attribute runs to emit Markdown syntax.
 struct HTMLToMarkdownConverter {
 
-    /// Converts HTML string to Markdown
     static func convert(_ html: String) -> String {
-        var result = html
+        guard !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
 
-        // Normalize whitespace
-        result = normalizeWhitespace(result)
+        // NSAttributedString HTML parsing must run on the main thread.
+        // It also requires UTF-16 encoded data.
+        guard let data = html.data(using: .utf8) else { return html }
 
-        // Convert block elements first (order matters)
-        result = convertCodeBlocks(result)
-        result = convertHeadings(result)
-        result = convertBlockquotes(result)
-        result = convertLists(result)
-        result = convertParagraphs(result)
+        let opts: [NSAttributedString.DocumentReadingOptionKey: Any] = [
+            .documentType: NSAttributedString.DocumentType.html,
+            .characterEncoding: String.Encoding.utf8.rawValue,
+        ]
 
-        // Convert inline elements
-        result = convertBold(result)
-        result = convertItalic(result)
-        result = convertCode(result)
-        result = convertLinks(result)
-        result = convertImages(result)
-        result = convertLineBreaks(result)
-
-        // Clean up remaining HTML tags but preserve text
-        result = stripRemainingTags(result)
-
-        // Final cleanup
-        result = normalizeWhitespace(result)
-
-        return result
-    }
-
-    // MARK: - Block Elements
-
-    private static func convertHeadings(_ html: String) -> String {
-        var result = html
-
-        // H1-H6 conversion
-        for level in 1...6 {
-            let marker = String(repeating: "#", count: level)
-            let pattern = "<h\(level)[^>]*>(.*?)</h\(level)>"
-            let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
-            result = regex?.stringByReplacingMatches(
-                in: result,
-                options: [],
-                range: NSRange(location: 0, length: result.utf16.count),
-                withTemplate: "\(marker) $1\n\n"
-            ) ?? result
-        }
-
-        return result
-    }
-
-    private static func convertParagraphs(_ html: String) -> String {
-        let pattern = "<p[^>]*>(.*?)</p>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
-        return regex?.stringByReplacingMatches(
-            in: html,
-            options: [],
-            range: NSRange(location: 0, length: html.utf16.count),
-            withTemplate: "$1\n\n"
-        ) ?? html
-    }
-
-    private static func convertBlockquotes(_ html: String) -> String {
-        let pattern = "<blockquote[^>]*>(.*?)</blockquote>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
-
-        guard let matches = regex?.matches(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count)) else {
+        guard let attrStr = try? NSAttributedString(data: data, options: opts, documentAttributes: nil) else {
             return html
         }
 
-        var result = html
-        // Process in reverse to maintain string indices
-        for match in matches.reversed() {
-            guard match.numberOfRanges > 1,
-                  let contentRange = Range(match.range(at: 1), in: result) else { continue }
-
-            let content = String(result[contentRange])
-            // Add > to each line
-            let quotedLines = content
-                .components(separatedBy: .newlines)
-                .map { "> \($0)" }
-                .joined(separator: "\n")
-
-            if let fullRange = Range(match.range, in: result) {
-                result.replaceSubrange(fullRange, with: quotedLines + "\n\n")
-            }
-        }
-
-        return result
+        return markdownFromAttributedString(attrStr)
     }
 
-    private static func convertLists(_ html: String) -> String {
-        var result = html
+    // MARK: - Attributed string → Markdown
 
-        // Convert unordered lists
-        result = convertUnorderedList(result)
+    private static func markdownFromAttributedString(_ attrStr: NSAttributedString) -> String {
+        let fullString = attrStr.string
+        var output = ""
 
-        // Convert ordered lists
-        result = convertOrderedList(result)
+        let nsString = fullString as NSString
+        var paraStart = 0
 
-        return result
-    }
+        while paraStart < nsString.length {
+            var paraEnd = 0
+            var contentsEnd = 0
+            nsString.getParagraphStart(nil, end: &paraEnd, contentsEnd: &contentsEnd,
+                                       for: NSRange(location: paraStart, length: 0))
 
-    private static func convertUnorderedList(_ html: String) -> String {
-        let pattern = "<ul[^>]*>(.*?)</ul>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
+            let contentsRange = NSRange(location: paraStart, length: contentsEnd - paraStart)
 
-        guard let matches = regex?.matches(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count)) else {
-            return html
-        }
+            // Grab first-character attributes to classify the paragraph.
+            let attrs = (paraEnd > paraStart)
+                ? attrStr.attributes(at: paraStart, effectiveRange: nil)
+                : [:]
 
-        var result = html
-        for match in matches.reversed() {
-            guard match.numberOfRanges > 1,
-                  let contentRange = Range(match.range(at: 1), in: result) else { continue }
+            let paraStyle = attrs[.paragraphStyle] as? NSParagraphStyle
+            let font      = attrs[.font] as? NSFont
+            let fontSize  = font?.pointSize ?? 12
+            let headingLevel = headingLevelForFontSize(fontSize)
+            let isListItem   = isListItemParagraph(paraStyle)
+            let isOrdered    = isOrderedListItem(attrStr, range: contentsRange)
 
-            let content = String(result[contentRange])
-            let listItems = convertListItems(content, prefix: "- ")
-
-            if let fullRange = Range(match.range, in: result) {
-                result.replaceSubrange(fullRange, with: listItems + "\n")
-            }
-        }
-
-        return result
-    }
-
-    private static func convertOrderedList(_ html: String) -> String {
-        let pattern = "<ol[^>]*>(.*?)</ol>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
-
-        guard let matches = regex?.matches(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count)) else {
-            return html
-        }
-
-        var result = html
-        var listIndex = 1
-        for match in matches.reversed() {
-            guard match.numberOfRanges > 1,
-                  let contentRange = Range(match.range(at: 1), in: result) else { continue }
-
-            let content = String(result[contentRange])
-            let listItems = convertOrderedListItems(content, startingAt: &listIndex)
-
-            if let fullRange = Range(match.range, in: result) {
-                result.replaceSubrange(fullRange, with: listItems + "\n")
-            }
-        }
-
-        return result
-    }
-
-    private static func convertListItems(_ content: String, prefix: String, indent: String = "") -> String {
-        let itemPattern = "<li[^>]*>(.*?)</li>"
-        let regex = try? NSRegularExpression(pattern: itemPattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
-
-        var result = ""
-        var lastEnd = 0
-        let nsContent = content as NSString
-
-        regex?.enumerateMatches(in: content, options: [], range: NSRange(location: 0, length: nsContent.length)) { match, _, _ in
-            guard let match = match, match.numberOfRanges > 1 else { return }
-
-            let itemRange = match.range
-            if let contentRange = Range(match.range(at: 1), in: content),
-               let fullRange = Range(itemRange, in: content) {
-
-                let itemContent = String(content[contentRange])
-
-                // Check for nested lists
-                let nestedListResult = handleNestedList(itemContent, parentPrefix: prefix, indent: indent)
-
-                result += indent + prefix + nestedListResult.mainContent + "\n"
-                if !nestedListResult.nestedContent.isEmpty {
-                    result += nestedListResult.nestedContent + "\n"
-                }
-            }
-            lastEnd = itemRange.location + itemRange.length
-        }
-
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func convertOrderedListItems(_ content: String, startingAt index: inout Int, indent: String = "") -> String {
-        let itemPattern = "<li[^>]*>(.*?)</li>"
-        let regex = try? NSRegularExpression(pattern: itemPattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
-
-        var result = ""
-        let nsContent = content as NSString
-
-        regex?.enumerateMatches(in: content, options: [], range: NSRange(location: 0, length: nsContent.length)) { match, _, _ in
-            guard let match = match, match.numberOfRanges > 1 else { return }
-
-            if let contentRange = Range(match.range(at: 1), in: content) {
-                let itemContent = String(content[contentRange])
-                let prefix = "\(index). "
-
-                // Check for nested lists
-                let nestedListResult = handleNestedList(itemContent, parentPrefix: prefix, indent: indent)
-
-                result += indent + prefix + nestedListResult.mainContent + "\n"
-                if !nestedListResult.nestedContent.isEmpty {
-                    result += nestedListResult.nestedContent + "\n"
-                }
-
-                index += 1
-            }
-        }
-
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private struct NestedListResult {
-        let mainContent: String
-        let nestedContent: String
-    }
-
-    private static func handleNestedList(_ content: String, parentPrefix: String, indent: String) -> NestedListResult {
-        // Check for nested ul or ol
-        let ulPattern = "<ul[^>]*>(.*?)</ul>"
-        let olPattern = "<ol[^>]*>(.*?)</ol>"
-
-        var mainContent = content
-        var nestedContent = ""
-
-        if let ulRange = content.range(of: "<ul", options: .caseInsensitive) {
-            let beforeUL = String(content[..<ulRange.lowerBound])
-            mainContent = beforeUL.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if let ulEndRange = content.range(of: "</ul>", options: .caseInsensitive, range: ulRange.lowerBound..<content.endIndex) {
-                let nestedULContent = String(content[ulRange.lowerBound..<ulEndRange.upperBound])
-                let converted = convertUnorderedList(nestedULContent)
-                // Indent the nested content
-                nestedContent = converted
-                    .components(separatedBy: .newlines)
-                    .map { "    " + $0 }
-                    .joined(separator: "\n")
-            }
-        } else if let olRange = content.range(of: "<ol", options: .caseInsensitive) {
-            let beforeOL = String(content[..<olRange.lowerBound])
-            mainContent = beforeOL.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if let olEndRange = content.range(of: "</ol>", options: .caseInsensitive, range: olRange.lowerBound..<content.endIndex) {
-                let nestedOLContent = String(content[olRange.lowerBound..<olEndRange.upperBound])
-                var listIndex = 1
-                let converted = convertOrderedListItems(nestedOLContent, startingAt: &listIndex, indent: "    ")
-                nestedContent = converted
-            }
-        } else {
-            // No nested list, clean up the content
-            mainContent = stripTags(mainContent)
+            // Build inline content, suppressing bold on headings (NSAttributedString
+            // makes heading text bold by default — that would double-format it).
+            let inlineContent = inlineMarkdown(attrStr, range: contentsRange,
+                                               suppressBold: headingLevel > 0)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
 
-        return NestedListResult(mainContent: mainContent, nestedContent: nestedContent)
-    }
-
-    private static func convertCodeBlocks(_ html: String) -> String {
-        // Handle <pre><code> blocks
-        let pattern = "<pre[^>]*>(?:<code[^>]*>)?(.*?)(?:</code>)?</pre>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
-
-        guard let matches = regex?.matches(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count)) else {
-            return html
-        }
-
-        var result = html
-        for match in matches.reversed() {
-            guard match.numberOfRanges > 1,
-                  let contentRange = Range(match.range(at: 1), in: result) else { continue }
-
-            let content = String(result[contentRange])
-            // Escape backticks in content if they exist
-            let escapedContent = content.replacingOccurrences(of: "```", with: "\\`\\`\\`")
-            let codeBlock = "```\n\(escapedContent)\n```\n\n"
-
-            if let fullRange = Range(match.range, in: result) {
-                result.replaceSubrange(fullRange, with: codeBlock)
+            if inlineContent.isEmpty {
+                if !output.isEmpty { output += "\n" }
+            } else if headingLevel > 0 {
+                let hashes = String(repeating: "#", count: headingLevel)
+                output += "\(hashes) \(inlineContent)\n\n"
+            } else if isListItem {
+                let marker = isOrdered ? "1." : "-"
+                let indent = indentForParagraphStyle(paraStyle)
+                output += "\(indent)\(marker) \(inlineContent)\n"
+            } else {
+                output += "\(inlineContent)\n\n"
             }
+
+            paraStart = paraEnd
         }
 
-        return result
+        return output
+            .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // MARK: - Inline Elements
+    // MARK: - Inline span rendering
 
-    private static func convertBold(_ html: String) -> String {
-        var result = html
-        let patterns = [
-            "<strong[^>]*>(.*?)</strong>",
-            "<b[^>]*>(.*?)</b>",
-        ]
+    private static func inlineMarkdown(_ attrStr: NSAttributedString, range: NSRange,
+                                       suppressBold: Bool = false) -> String {
+        guard range.length > 0 else { return "" }
 
-        for pattern in patterns {
-            let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
-            result = regex?.stringByReplacingMatches(
-                in: result,
-                options: [],
-                range: NSRange(location: 0, length: result.utf16.count),
-                withTemplate: "**$1**"
-            ) ?? result
-        }
+        var output = ""
 
-        return result
-    }
+        attrStr.enumerateAttributes(in: range, options: []) { attrs, spanRange, _ in
+            let text = (attrStr.string as NSString).substring(with: spanRange)
 
-    private static func convertItalic(_ html: String) -> String {
-        var result = html
-        let patterns = [
-            "<em[^>]*>(.*?)</em>",
-            "<i[^>]*>(.*?)</i>",
-        ]
+            // Strip tabs (list marker column) and Unicode bullets NSAttributedString
+            // inserts for <ul> items (U+2022 •, U+25E6 ◦, U+25AA ▪, etc.)
+            var cleaned = text.replacingOccurrences(of: "\t", with: "")
+            cleaned = cleaned.unicodeScalars.filter { scalar in
+                // Drop Unicode list-marker bullet characters
+                ![0x2022, 0x25E6, 0x25AA, 0x25AB, 0x2023, 0x2043].contains(scalar.value)
+            }.reduce("") { $0 + String($1) }
 
-        for pattern in patterns {
-            let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
-            result = regex?.stringByReplacingMatches(
-                in: result,
-                options: [],
-                range: NSRange(location: 0, length: result.utf16.count),
-                withTemplate: "_$1_"
-            ) ?? result
-        }
+            guard !cleaned.isEmpty else { return }
 
-        return result
-    }
+            let font    = attrs[.font] as? NSFont
+            let isBold  = !suppressBold && (font?.fontDescriptor.symbolicTraits.contains(.bold) ?? false)
+            let isItalic = font?.fontDescriptor.symbolicTraits.contains(.italic) ?? false
+            let isMono  = font?.fontDescriptor.symbolicTraits.contains(.monoSpace) ?? false
+            let link    = attrs[.link] as? URL
+                       ?? (attrs[.link] as? String).flatMap { URL(string: $0) }
 
-    private static func convertCode(_ html: String) -> String {
-        let pattern = "<code[^>]*>(.*?)</code>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+            var span = cleaned
 
-        guard let matches = regex?.matches(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count)) else {
-            return html
-        }
-
-        var result = html
-        for match in matches.reversed() {
-            guard match.numberOfRanges > 1,
-                  let contentRange = Range(match.range(at: 1), in: result) else { continue }
-
-            let content = String(result[contentRange])
-            // Don't convert if it's already inside a pre block (handled separately)
-            let code = "`\(content)`"
-
-            if let fullRange = Range(match.range, in: result) {
-                result.replaceSubrange(fullRange, with: code)
+            if isMono {
+                span = "`\(span)`"
+            } else {
+                if isBold && isItalic { span = "***\(span)***" }
+                else if isBold        { span = "**\(span)**" }
+                else if isItalic      { span = "_\(span)_" }
             }
-        }
 
-        return result
-    }
-
-    private static func convertLinks(_ html: String) -> String {
-        let pattern = "<a[^>]+href=\"([^\"]+)\"[^>]*>(.*?)</a>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
-
-        return regex?.stringByReplacingMatches(
-            in: html,
-            options: [],
-            range: NSRange(location: 0, length: html.utf16.count),
-            withTemplate: "[$2]($1)"
-        ) ?? html
-    }
-
-    private static func convertImages(_ html: String) -> String {
-        let pattern = "<img[^>]+src=\"([^\"]+)\"(?:[^>]+alt=\"([^\"]*)\")?[^>]*/?>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
-
-        guard let matches = regex?.matches(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count)) else {
-            return html
-        }
-
-        var result = html
-        for match in matches.reversed() {
-            let srcRange = match.range(at: 1)
-            let altRange = match.range(at: 2)
-
-            guard let srcStringRange = Range(srcRange, in: result) else { continue }
-
-            let src = String(result[srcStringRange])
-            let alt = altRange.location != NSNotFound && altRange.length > 0
-                ? String(result[Range(altRange, in: result)!])
-                : ""
-
-            let markdown = "![\(alt)](\(src))"
-
-            if let fullRange = Range(match.range, in: result) {
-                result.replaceSubrange(fullRange, with: markdown)
+            if let url = link, !isMono {
+                span = "[\(cleaned)](\(url.absoluteString))"
             }
+
+            output += span
         }
 
-        return result
+        return output
     }
 
-    private static func convertLineBreaks(_ html: String) -> String {
-        var result = html
-        result = result.replacingOccurrences(of: "<br[^>]*>", with: "\n", options: .regularExpression)
-        result = result.replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
-        result = result.replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
-        return result
-    }
+    // MARK: - Helpers
 
-    // MARK: - Cleanup
-
-    private static func stripRemainingTags(_ html: String) -> String {
-        // Remove any remaining HTML tags but preserve their content
-        let pattern = "<[^>]+>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [])
-        return regex?.stringByReplacingMatches(
-            in: html,
-            options: [],
-            range: NSRange(location: 0, length: html.utf16.count),
-            withTemplate: ""
-        ) ?? html
-    }
-
-    private static func stripTags(_ html: String) -> String {
-        return stripRemainingTags(html)
-    }
-
-    private static func normalizeWhitespace(_ text: String) -> String {
-        var result = text
-
-        // Decode HTML entities
-        result = decodeHTMLEntities(result)
-
-        // Normalize newlines
-        result = result.replacingOccurrences(of: "\r\n", with: "\n")
-        result = result.replacingOccurrences(of: "\r", with: "\n")
-
-        // Remove excessive blank lines (more than 2)
-        while result.contains("\n\n\n\n") {
-            result = result.replacingOccurrences(of: "\n\n\n\n", with: "\n\n\n")
+    /// Map NSAttributedString's rendered font sizes back to heading levels.
+    /// Empirical values on macOS 14/15 with default system HTML stylesheet:
+    ///   h1 → ~24pt, h2 → ~18pt, h3 → ~14pt bold, h4-h6 → 12pt bold
+    private static func headingLevelForFontSize(_ size: CGFloat) -> Int {
+        switch size {
+        case 22...: return 1
+        case 17..<22: return 2
+        case 14..<17: return 3
+        default: return 0
         }
-
-        // Trim whitespace from each line
-        result = result
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .joined(separator: "\n")
-
-        // Trim overall
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func decodeHTMLEntities(_ text: String) -> String {
-        var result = text
+    private static func isListItemParagraph(_ style: NSParagraphStyle?) -> Bool {
+        guard let style else { return false }
+        return style.headIndent > 0 && !style.tabStops.isEmpty
+    }
 
-        let entities: [(String, String)] = [
-            ("&lt;", "<"),
-            ("&gt;", ">"),
-            ("&amp;", "&"),
-            ("&quot;", "\""),
-            ("&#39;", "'"),
-            ("&apos;", "'"),
-            ("&nbsp;", " "),
-            ("&mdash;", "—"),
-            ("&ndash;", "–"),
-            ("&hellip;", "…"),
-        ]
+    private static func isOrderedListItem(_ attrStr: NSAttributedString, range: NSRange) -> Bool {
+        guard range.length > 0 else { return false }
+        let raw = (attrStr.string as NSString).substring(with: range)
+        // Ordered items start with a tab followed by a digit and a period.
+        return raw.hasPrefix("\t") && raw.dropFirst().first?.isNumber == true
+    }
 
-        for (entity, replacement) in entities {
-            result = result.replacingOccurrences(of: entity, with: replacement)
-        }
-
-        // Handle numeric entities (basic ones)
-        let numericPattern = "&#(\\d+);"
-        if let regex = try? NSRegularExpression(pattern: numericPattern, options: []) {
-            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count))
-            for match in matches.reversed() {
-                if match.numberOfRanges > 1,
-                   let range = Range(match.range(at: 1), in: result),
-                   let num = Int(String(result[range])),
-                   let scalar = UnicodeScalar(num) {
-                    let fullRange = match.range
-                    if let fullStringRange = Range(fullRange, in: result) {
-                        result.replaceSubrange(fullStringRange, with: String(Character(scalar)))
-                    }
-                }
-            }
-        }
-
-        return result
+    private static func indentForParagraphStyle(_ style: NSParagraphStyle?) -> String {
+        guard let style, style.headIndent > 36 else { return "" }
+        let extraLevels = Int((style.headIndent - 18) / 18)
+        return String(repeating: "    ", count: max(0, extraLevels))
     }
 }
 
