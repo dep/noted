@@ -137,16 +137,16 @@ final class NoteReferenceResolutionTests: XCTestCase {
     }
 
     func test_embedContent_nestedEmbedsDisabledByDefault_convertsToWikiLinks() {
-        let innerURL = makeFile(named: "inner.md", content: "![[another]]")
+        // outer.md embeds inner.md; when allowNesting=false, the embed inside outer becomes a plain link
+        makeFile(named: "inner.md", content: "Inner content")
         makeFile(named: "outer.md", content: "![[inner]]")
         sut.refreshAllFiles()
 
         let embed = AppState.EmbedMatch(noteName: "outer", range: NSRange(location: 0, length: 0))
         let content = sut.embedContent(for: embed, allowNesting: false)
-        // The nested ![[another]] should be converted to [[another]]
-        XCTAssertEqual(content, "[[another]]",
-                       "Nested embeds should be converted to plain wiki-links when allowNesting is false")
-        let _ = innerURL
+        // The ![[inner]] inside outer.md should be demoted to [[inner]]
+        XCTAssertEqual(content, "[[inner]]",
+                       "Nested embed ![[inner]] should be converted to [[inner]] when allowNesting is false")
     }
 
     // MARK: - noteIndex deduplication via vaultGraph

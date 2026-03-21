@@ -198,10 +198,6 @@ final class AutoUpdaterFetchTests: XCTestCase {
     // MARK: - Non-200 / error responses (silent fail)
 
     func test_checkForUpdatesOnLaunch_404Response_updateAvailableRemainsFalse() async {
-        MockAutoUpdaterURLProtocol.requestHandler = { [unowned self] request in
-            (self.makeResponse(for: request, statusCode: 404), Data())
-        }
-
         let requestHandled = XCTestExpectation(description: "Request handled")
         MockAutoUpdaterURLProtocol.requestHandler = { [unowned self] request in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -223,10 +219,6 @@ final class AutoUpdaterFetchTests: XCTestCase {
     }
 
     func test_checkForUpdatesOnLaunch_networkError_updateAvailableRemainsFalse() async {
-        MockAutoUpdaterURLProtocol.requestHandler = { _ in
-            throw URLError(.notConnectedToInternet)
-        }
-
         let requestHandled = XCTestExpectation(description: "Request attempted")
         var handlerFired = false
         MockAutoUpdaterURLProtocol.requestHandler = { [unowned self] request in
