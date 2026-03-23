@@ -244,6 +244,15 @@ class SettingsManager: ObservableObject {
     @Published var browserStartupURL: String {
         didSet { save() }
     }
+    @Published var editorBodyFontFamily: String {
+        didSet { save() }
+    }
+    @Published var editorMonospaceFontFamily: String {
+        didSet { save() }
+    }
+    @Published var editorFontSize: Int {
+        didSet { save() }
+    }
     /// Array of vault path candidates for cross-machine syncing
     /// First existing path is used when opening the app
     @Published var vaultPaths: [String] {
@@ -414,6 +423,9 @@ class SettingsManager: ObservableObject {
         var defaultEditMode: Bool?
         var hideMarkdownWhileEditing: Bool?
         var browserStartupURL: String?
+        var editorBodyFontFamily: String?
+        var editorMonospaceFontFamily: String?
+        var editorFontSize: Int?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -437,6 +449,9 @@ class SettingsManager: ObservableObject {
             defaultEditMode = try container.decodeIfPresent(Bool.self, forKey: .defaultEditMode)
             hideMarkdownWhileEditing = try container.decodeIfPresent(Bool.self, forKey: .hideMarkdownWhileEditing)
             browserStartupURL = try container.decodeIfPresent(String.self, forKey: .browserStartupURL)
+            editorBodyFontFamily = try container.decodeIfPresent(String.self, forKey: .editorBodyFontFamily)
+            editorMonospaceFontFamily = try container.decodeIfPresent(String.self, forKey: .editorMonospaceFontFamily)
+            editorFontSize = try container.decodeIfPresent(Int.self, forKey: .editorFontSize)
         }
     }
 
@@ -456,6 +471,9 @@ class SettingsManager: ObservableObject {
         var defaultEditMode: Bool?
         var hideMarkdownWhileEditing: Bool?
         var browserStartupURL: String?
+        var editorBodyFontFamily: String?
+        var editorMonospaceFontFamily: String?
+        var editorFontSize: Int?
 
         init(
             onBootCommand: String,
@@ -471,7 +489,10 @@ class SettingsManager: ObservableObject {
             pinnedItems: [PinnedItem]?,
             defaultEditMode: Bool?,
             hideMarkdownWhileEditing: Bool?,
-            browserStartupURL: String?
+            browserStartupURL: String?,
+            editorBodyFontFamily: String? = nil,
+            editorMonospaceFontFamily: String? = nil,
+            editorFontSize: Int? = nil
         ) {
             self.onBootCommand = onBootCommand
             self.fileExtensionFilter = fileExtensionFilter
@@ -487,6 +508,9 @@ class SettingsManager: ObservableObject {
             self.defaultEditMode = defaultEditMode
             self.hideMarkdownWhileEditing = hideMarkdownWhileEditing
             self.browserStartupURL = browserStartupURL
+            self.editorBodyFontFamily = editorBodyFontFamily
+            self.editorMonospaceFontFamily = editorMonospaceFontFamily
+            self.editorFontSize = editorFontSize
         }
 
         init(from decoder: Decoder) throws {
@@ -505,6 +529,9 @@ class SettingsManager: ObservableObject {
             defaultEditMode = try container.decodeIfPresent(Bool.self, forKey: .defaultEditMode)
             hideMarkdownWhileEditing = try container.decodeIfPresent(Bool.self, forKey: .hideMarkdownWhileEditing)
             browserStartupURL = try container.decodeIfPresent(String.self, forKey: .browserStartupURL)
+            editorBodyFontFamily = try container.decodeIfPresent(String.self, forKey: .editorBodyFontFamily)
+            editorMonospaceFontFamily = try container.decodeIfPresent(String.self, forKey: .editorMonospaceFontFamily)
+            editorFontSize = try container.decodeIfPresent(Int.self, forKey: .editorFontSize)
         }
     }
 
@@ -588,6 +615,9 @@ class SettingsManager: ObservableObject {
         self.defaultEditMode = true
         self.hideMarkdownWhileEditing = false
         self.browserStartupURL = ""
+        self.editorBodyFontFamily = "System"
+        self.editorMonospaceFontFamily = "System Monospace"
+        self.editorFontSize = 15
         self.vaultPaths = []
 
         applyLegacyConfig(Self.loadConfig(from: configPath))
@@ -636,6 +666,9 @@ class SettingsManager: ObservableObject {
         self.defaultEditMode = true
         self.hideMarkdownWhileEditing = false
         self.browserStartupURL = ""
+        self.editorBodyFontFamily = "System"
+        self.editorMonospaceFontFamily = "System Monospace"
+        self.editorFontSize = 15
         self.vaultPaths = []
 
         if let vaultRoot = vaultRoot {
@@ -679,6 +712,9 @@ class SettingsManager: ObservableObject {
             defaultEditMode = config.defaultEditMode ?? true
             hideMarkdownWhileEditing = config.hideMarkdownWhileEditing ?? false
             browserStartupURL = config.browserStartupURL ?? ""
+            editorBodyFontFamily = config.editorBodyFontFamily ?? "System"
+            editorMonospaceFontFamily = config.editorMonospaceFontFamily ?? "System Monospace"
+            editorFontSize = config.editorFontSize ?? 15
             vaultPaths = []
             return
         }
@@ -703,6 +739,9 @@ class SettingsManager: ObservableObject {
         defaultEditMode = true
         hideMarkdownWhileEditing = false
         browserStartupURL = ""
+        editorBodyFontFamily = "System"
+        editorMonospaceFontFamily = "System Monospace"
+        editorFontSize = 15
         vaultPaths = []
     }
 
@@ -722,6 +761,9 @@ class SettingsManager: ObservableObject {
             defaultEditMode = vaultConfig.defaultEditMode ?? true
             hideMarkdownWhileEditing = vaultConfig.hideMarkdownWhileEditing ?? false
             browserStartupURL = vaultConfig.browserStartupURL ?? ""
+            editorBodyFontFamily = vaultConfig.editorBodyFontFamily ?? "System"
+            editorMonospaceFontFamily = vaultConfig.editorMonospaceFontFamily ?? "System Monospace"
+            editorFontSize = vaultConfig.editorFontSize ?? 15
             return
         }
 
@@ -739,6 +781,9 @@ class SettingsManager: ObservableObject {
         defaultEditMode = true
         hideMarkdownWhileEditing = false
         browserStartupURL = ""
+        editorBodyFontFamily = "System"
+        editorMonospaceFontFamily = "System Monospace"
+        editorFontSize = 15
     }
 
     private func applyNoVaultDefaults() {
@@ -756,6 +801,9 @@ class SettingsManager: ObservableObject {
         defaultEditMode = true
         hideMarkdownWhileEditing = false
         browserStartupURL = ""
+        editorBodyFontFamily = "System"
+        editorMonospaceFontFamily = "System Monospace"
+        editorFontSize = 15
     }
 
     private func applyGlobalConfig(_ globalConfig: GlobalConfig?) {
@@ -938,6 +986,9 @@ class SettingsManager: ObservableObject {
         let defaultEditMode: Bool
         let hideMarkdownWhileEditing: Bool
         let browserStartupURL: String
+        let editorBodyFontFamily: String
+        let editorMonospaceFontFamily: String
+        let editorFontSize: Int
         let configPath: String
         let vaultRootURL: URL?
         let globalConfigPath: String?
@@ -966,6 +1017,9 @@ class SettingsManager: ObservableObject {
             defaultEditMode       = s.defaultEditMode
             hideMarkdownWhileEditing = s.hideMarkdownWhileEditing
             browserStartupURL     = s.browserStartupURL
+            editorBodyFontFamily  = s.editorBodyFontFamily
+            editorMonospaceFontFamily = s.editorMonospaceFontFamily
+            editorFontSize        = s.editorFontSize
             configPath            = s.configPath
             vaultRootURL          = s.vaultRootURL
             globalConfigPath      = s.globalConfigPath
@@ -1023,6 +1077,9 @@ class SettingsManager: ObservableObject {
                 var defaultEditMode: Bool?
                 var hideMarkdownWhileEditing: Bool?
                 var browserStartupURL: String?
+                var editorBodyFontFamily: String?
+                var editorMonospaceFontFamily: String?
+                var editorFontSize: Int?
             }
             let file = LegacyFile(
                 onBootCommand: onBootCommand,
@@ -1044,7 +1101,10 @@ class SettingsManager: ObservableObject {
                 pinnedItems: pinnedItems.isEmpty ? nil : pinnedItems,
                 defaultEditMode: defaultEditMode,
                 hideMarkdownWhileEditing: hideMarkdownWhileEditing ? true : nil,
-                browserStartupURL: browserStartupURL.isEmpty ? nil : browserStartupURL
+                browserStartupURL: browserStartupURL.isEmpty ? nil : browserStartupURL,
+                editorBodyFontFamily: editorBodyFontFamily == "System" ? nil : editorBodyFontFamily,
+                editorMonospaceFontFamily: editorMonospaceFontFamily == "System Monospace" ? nil : editorMonospaceFontFamily,
+                editorFontSize: editorFontSize == 15 ? nil : editorFontSize
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -1070,7 +1130,10 @@ class SettingsManager: ObservableObject {
                 pinnedItems: pinnedItems.isEmpty ? nil : pinnedItems,
                 defaultEditMode: defaultEditMode,
                 hideMarkdownWhileEditing: hideMarkdownWhileEditing ? true : nil,
-                browserStartupURL: browserStartupURL.isEmpty ? nil : browserStartupURL
+                browserStartupURL: browserStartupURL.isEmpty ? nil : browserStartupURL,
+                editorBodyFontFamily: editorBodyFontFamily == "System" ? nil : editorBodyFontFamily,
+                editorMonospaceFontFamily: editorMonospaceFontFamily == "System Monospace" ? nil : editorMonospaceFontFamily,
+                editorFontSize: editorFontSize == 15 ? nil : editorFontSize
             )
             let notedDir = vaultRootURL.appendingPathComponent(".synapse")
             try? FileManager.default.createDirectory(at: notedDir, withIntermediateDirectories: true)

@@ -852,7 +852,85 @@ func refreshActiveEditorForHideMarkdownToggle(hideMarkdown: Bool) {
 
 // MARK: - Markdown styling theme
 
-private enum MarkdownTheme {
+struct MarkdownTheme {
+    // MARK: - Font functions based on SettingsManager
+    
+    static func bodyFont(for settings: SettingsManager) -> NSFont {
+        let size = CGFloat(settings.editorFontSize)
+        if settings.editorBodyFontFamily.isEmpty || settings.editorBodyFontFamily == "System" {
+            return NSFont.systemFont(ofSize: size)
+        }
+        return NSFont(name: settings.editorBodyFontFamily, size: size) ?? NSFont.systemFont(ofSize: size)
+    }
+    
+    static func monoFont(for settings: SettingsManager) -> NSFont {
+        let baseSize = CGFloat(settings.editorFontSize)
+        let size = max(10, baseSize - 2) // Monospace is 2 points smaller, minimum 10
+        if settings.editorMonospaceFontFamily.isEmpty || settings.editorMonospaceFontFamily == "System Monospace" {
+            return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+        return NSFont(name: settings.editorMonospaceFontFamily, size: size) 
+            ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+    
+    static func h1Font(for settings: SettingsManager) -> NSFont {
+        let size = round(CGFloat(settings.editorFontSize) * 1.87) // 28/15 ≈ 1.87
+        if settings.editorBodyFontFamily.isEmpty || settings.editorBodyFontFamily == "System" {
+            return NSFont.systemFont(ofSize: size, weight: .bold)
+        }
+        return NSFont(name: settings.editorBodyFontFamily, size: size)?.withWeight(.bold) 
+            ?? NSFont.systemFont(ofSize: size, weight: .bold)
+    }
+    
+    static func h2Font(for settings: SettingsManager) -> NSFont {
+        let size = round(CGFloat(settings.editorFontSize) * 1.47) // 22/15 ≈ 1.47
+        if settings.editorBodyFontFamily.isEmpty || settings.editorBodyFontFamily == "System" {
+            return NSFont.systemFont(ofSize: size, weight: .bold)
+        }
+        return NSFont(name: settings.editorBodyFontFamily, size: size)?.withWeight(.bold)
+            ?? NSFont.systemFont(ofSize: size, weight: .bold)
+    }
+    
+    static func h3Font(for settings: SettingsManager) -> NSFont {
+        let size = round(CGFloat(settings.editorFontSize) * 1.2) // 18/15 = 1.2
+        if settings.editorBodyFontFamily.isEmpty || settings.editorBodyFontFamily == "System" {
+            return NSFont.systemFont(ofSize: size, weight: .semibold)
+        }
+        return NSFont(name: settings.editorBodyFontFamily, size: size)?.withWeight(.semibold)
+            ?? NSFont.systemFont(ofSize: size, weight: .semibold)
+    }
+    
+    static func h4Font(for settings: SettingsManager) -> NSFont {
+        let size = round(CGFloat(settings.editorFontSize) * 1.07) // 16/15 ≈ 1.07
+        if settings.editorBodyFontFamily.isEmpty || settings.editorBodyFontFamily == "System" {
+            return NSFont.systemFont(ofSize: size, weight: .semibold)
+        }
+        return NSFont(name: settings.editorBodyFontFamily, size: size)?.withWeight(.semibold)
+            ?? NSFont.systemFont(ofSize: size, weight: .semibold)
+    }
+    
+    static func boldFont(for settings: SettingsManager) -> NSFont {
+        let size = CGFloat(settings.editorFontSize)
+        if settings.editorBodyFontFamily.isEmpty || settings.editorBodyFontFamily == "System" {
+            return NSFont.systemFont(ofSize: size, weight: .bold)
+        }
+        return NSFont(name: settings.editorBodyFontFamily, size: size)?.withWeight(.bold)
+            ?? NSFont.systemFont(ofSize: size, weight: .bold)
+    }
+    
+    static func italicFont(for settings: SettingsManager) -> NSFont {
+        let size = CGFloat(settings.editorFontSize)
+        if settings.editorBodyFontFamily.isEmpty || settings.editorBodyFontFamily == "System" {
+            let descriptor = NSFont.systemFont(ofSize: size).fontDescriptor.withSymbolicTraits(.italic)
+            return NSFont(descriptor: descriptor, size: size) ?? NSFont.systemFont(ofSize: size)
+        }
+        let baseFont = NSFont(name: settings.editorBodyFontFamily, size: size) ?? NSFont.systemFont(ofSize: size)
+        let descriptor = baseFont.fontDescriptor.withSymbolicTraits(.italic)
+        return NSFont(descriptor: descriptor, size: size) ?? baseFont
+    }
+    
+    // MARK: - Legacy static constants (for backward compatibility)
+    
     static let body = NSFont.systemFont(ofSize: 15)
     static let mono = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     static let h1   = NSFont.systemFont(ofSize: 28, weight: .bold)
@@ -864,6 +942,22 @@ private enum MarkdownTheme {
     static let linkColor           = SynapseTheme.editorLink
     static let unresolvedLinkColor = SynapseTheme.editorUnresolvedLink
     static let codeBackground      = SynapseTheme.editorCodeBackground
+}
+
+// Helper extension to apply font weight
+private extension NSFont {
+    func withWeight(_ weight: NSFont.Weight) -> NSFont {
+        // Create a new font descriptor with the desired weight trait
+        var traits = fontDescriptor.symbolicTraits
+        // Map NSFont.Weight to NSFontDescriptor.SymbolicTraits
+        if weight == .bold || weight.rawValue >= NSFont.Weight.bold.rawValue {
+            traits.insert(.bold)
+        } else if weight == .semibold || weight.rawValue >= NSFont.Weight.semibold.rawValue {
+            traits.insert(.bold)
+        }
+        let descriptor = fontDescriptor.withSymbolicTraits(traits)
+        return NSFont(descriptor: descriptor, size: pointSize) ?? self
+    }
 }
 
 /// Custom attribute key for wiki links — avoids NSTextView overriding our foreground color via linkTextAttributes.
