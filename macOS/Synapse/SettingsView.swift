@@ -22,6 +22,12 @@ struct SettingsView: View {
 
     private let settingsFieldWidth: CGFloat = 440
 
+    private func refreshEditorsForFontChange() {
+        DispatchQueue.main.async {
+            refreshAllEditorsForFontChange()
+        }
+    }
+
     var body: some View {
         Form {
             // MARK: - Editor Section
@@ -81,6 +87,24 @@ struct SettingsView: View {
                                 .multilineTextAlignment(.trailing)
                             
                             Text("pt")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Line Height")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 8) {
+                            TextField("", value: $settings.editorLineHeight, format: .number.precision(.fractionLength(1)))
+                                .font(.system(.body, design: .monospaced))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 60)
+                                .multilineTextAlignment(.trailing)
+
+                            Text("x")
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(.secondary)
                         }
@@ -491,6 +515,18 @@ struct SettingsView: View {
                 Text("GitHub Gist")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
             }
+        }
+        .onChange(of: settings.editorBodyFontFamily) { _ in
+            refreshEditorsForFontChange()
+        }
+        .onChange(of: settings.editorMonospaceFontFamily) { _ in
+            refreshEditorsForFontChange()
+        }
+        .onChange(of: settings.editorFontSize) { _ in
+            refreshEditorsForFontChange()
+        }
+        .onChange(of: settings.editorLineHeight) { _ in
+            refreshEditorsForFontChange()
         }
         .formStyle(.grouped)
         .frame(width: 560)

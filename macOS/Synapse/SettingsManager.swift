@@ -253,6 +253,9 @@ class SettingsManager: ObservableObject {
     @Published var editorFontSize: Int {
         didSet { save() }
     }
+    @Published var editorLineHeight: Double {
+        didSet { save() }
+    }
     /// Array of vault path candidates for cross-machine syncing
     /// First existing path is used when opening the app
     @Published var vaultPaths: [String] {
@@ -426,6 +429,7 @@ class SettingsManager: ObservableObject {
         var editorBodyFontFamily: String?
         var editorMonospaceFontFamily: String?
         var editorFontSize: Int?
+        var editorLineHeight: Double?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -452,6 +456,7 @@ class SettingsManager: ObservableObject {
             editorBodyFontFamily = try container.decodeIfPresent(String.self, forKey: .editorBodyFontFamily)
             editorMonospaceFontFamily = try container.decodeIfPresent(String.self, forKey: .editorMonospaceFontFamily)
             editorFontSize = try container.decodeIfPresent(Int.self, forKey: .editorFontSize)
+            editorLineHeight = try container.decodeIfPresent(Double.self, forKey: .editorLineHeight)
         }
     }
 
@@ -474,6 +479,7 @@ class SettingsManager: ObservableObject {
         var editorBodyFontFamily: String?
         var editorMonospaceFontFamily: String?
         var editorFontSize: Int?
+        var editorLineHeight: Double?
 
         init(
             onBootCommand: String,
@@ -492,7 +498,8 @@ class SettingsManager: ObservableObject {
             browserStartupURL: String?,
             editorBodyFontFamily: String? = nil,
             editorMonospaceFontFamily: String? = nil,
-            editorFontSize: Int? = nil
+            editorFontSize: Int? = nil,
+            editorLineHeight: Double? = nil
         ) {
             self.onBootCommand = onBootCommand
             self.fileExtensionFilter = fileExtensionFilter
@@ -511,6 +518,7 @@ class SettingsManager: ObservableObject {
             self.editorBodyFontFamily = editorBodyFontFamily
             self.editorMonospaceFontFamily = editorMonospaceFontFamily
             self.editorFontSize = editorFontSize
+            self.editorLineHeight = editorLineHeight
         }
 
         init(from decoder: Decoder) throws {
@@ -532,6 +540,7 @@ class SettingsManager: ObservableObject {
             editorBodyFontFamily = try container.decodeIfPresent(String.self, forKey: .editorBodyFontFamily)
             editorMonospaceFontFamily = try container.decodeIfPresent(String.self, forKey: .editorMonospaceFontFamily)
             editorFontSize = try container.decodeIfPresent(Int.self, forKey: .editorFontSize)
+            editorLineHeight = try container.decodeIfPresent(Double.self, forKey: .editorLineHeight)
         }
     }
 
@@ -618,6 +627,7 @@ class SettingsManager: ObservableObject {
         self.editorBodyFontFamily = "System"
         self.editorMonospaceFontFamily = "System Monospace"
         self.editorFontSize = 15
+        self.editorLineHeight = 1.6
         self.vaultPaths = []
 
         applyLegacyConfig(Self.loadConfig(from: configPath))
@@ -669,6 +679,7 @@ class SettingsManager: ObservableObject {
         self.editorBodyFontFamily = "System"
         self.editorMonospaceFontFamily = "System Monospace"
         self.editorFontSize = 15
+        self.editorLineHeight = 1.6
         self.vaultPaths = []
 
         if let vaultRoot = vaultRoot {
@@ -715,6 +726,7 @@ class SettingsManager: ObservableObject {
             editorBodyFontFamily = config.editorBodyFontFamily ?? "System"
             editorMonospaceFontFamily = config.editorMonospaceFontFamily ?? "System Monospace"
             editorFontSize = config.editorFontSize ?? 15
+            editorLineHeight = config.editorLineHeight ?? 1.6
             vaultPaths = []
             return
         }
@@ -742,6 +754,7 @@ class SettingsManager: ObservableObject {
         editorBodyFontFamily = "System"
         editorMonospaceFontFamily = "System Monospace"
         editorFontSize = 15
+        editorLineHeight = 1.6
         vaultPaths = []
     }
 
@@ -764,6 +777,7 @@ class SettingsManager: ObservableObject {
             editorBodyFontFamily = vaultConfig.editorBodyFontFamily ?? "System"
             editorMonospaceFontFamily = vaultConfig.editorMonospaceFontFamily ?? "System Monospace"
             editorFontSize = vaultConfig.editorFontSize ?? 15
+            editorLineHeight = vaultConfig.editorLineHeight ?? 1.6
             return
         }
 
@@ -784,6 +798,7 @@ class SettingsManager: ObservableObject {
         editorBodyFontFamily = "System"
         editorMonospaceFontFamily = "System Monospace"
         editorFontSize = 15
+        editorLineHeight = 1.6
     }
 
     private func applyNoVaultDefaults() {
@@ -804,6 +819,7 @@ class SettingsManager: ObservableObject {
         editorBodyFontFamily = "System"
         editorMonospaceFontFamily = "System Monospace"
         editorFontSize = 15
+        editorLineHeight = 1.6
     }
 
     private func applyGlobalConfig(_ globalConfig: GlobalConfig?) {
@@ -989,6 +1005,7 @@ class SettingsManager: ObservableObject {
         let editorBodyFontFamily: String
         let editorMonospaceFontFamily: String
         let editorFontSize: Int
+        let editorLineHeight: Double
         let configPath: String
         let vaultRootURL: URL?
         let globalConfigPath: String?
@@ -1020,6 +1037,7 @@ class SettingsManager: ObservableObject {
             editorBodyFontFamily  = s.editorBodyFontFamily
             editorMonospaceFontFamily = s.editorMonospaceFontFamily
             editorFontSize        = s.editorFontSize
+            editorLineHeight      = s.editorLineHeight
             configPath            = s.configPath
             vaultRootURL          = s.vaultRootURL
             globalConfigPath      = s.globalConfigPath
@@ -1080,6 +1098,7 @@ class SettingsManager: ObservableObject {
                 var editorBodyFontFamily: String?
                 var editorMonospaceFontFamily: String?
                 var editorFontSize: Int?
+                var editorLineHeight: Double?
             }
             let file = LegacyFile(
                 onBootCommand: onBootCommand,
@@ -1104,7 +1123,8 @@ class SettingsManager: ObservableObject {
                 browserStartupURL: browserStartupURL.isEmpty ? nil : browserStartupURL,
                 editorBodyFontFamily: editorBodyFontFamily == "System" ? nil : editorBodyFontFamily,
                 editorMonospaceFontFamily: editorMonospaceFontFamily == "System Monospace" ? nil : editorMonospaceFontFamily,
-                editorFontSize: editorFontSize == 15 ? nil : editorFontSize
+                editorFontSize: editorFontSize == 15 ? nil : editorFontSize,
+                editorLineHeight: editorLineHeight == 1.6 ? nil : editorLineHeight
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -1133,7 +1153,8 @@ class SettingsManager: ObservableObject {
                 browserStartupURL: browserStartupURL.isEmpty ? nil : browserStartupURL,
                 editorBodyFontFamily: editorBodyFontFamily == "System" ? nil : editorBodyFontFamily,
                 editorMonospaceFontFamily: editorMonospaceFontFamily == "System Monospace" ? nil : editorMonospaceFontFamily,
-                editorFontSize: editorFontSize == 15 ? nil : editorFontSize
+                editorFontSize: editorFontSize == 15 ? nil : editorFontSize,
+                editorLineHeight: editorLineHeight == 1.6 ? nil : editorLineHeight
             )
             let notedDir = vaultRootURL.appendingPathComponent(".synapse")
             try? FileManager.default.createDirectory(at: notedDir, withIntermediateDirectories: true)

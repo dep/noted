@@ -142,4 +142,10 @@ final class EditorFontStylingTests: XCTestCase {
         XCTAssertEqual(mono.pointSize, 13, "Default mono size should be 13 (15-2)")
         XCTAssertEqual(h1.pointSize, round(15 * 1.87), "Default H1 should scale from 15")
     }
+
+    func test_lineHeightMultiple_usesSettingsValue() {
+        settings.editorLineHeight = 1.9
+
+        XCTAssertEqual(MarkdownTheme.lineHeightMultiple(for: settings), 1.9, accuracy: 0.001)
+    }
 }

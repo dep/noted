@@ -42,6 +42,12 @@ final class SettingsManagerFontSettingsTests: XCTestCase {
                        "Font size should default to 15")
     }
 
+    func test_editorLineHeight_defaultsTo16() {
+        XCTAssertEqual(sut.editorLineHeight, 1.6,
+                       accuracy: 0.001,
+                       "Line height should default to 1.6")
+    }
+
     // MARK: - Setting Values
 
     func test_editorBodyFontFamily_canBeSet() {
@@ -75,6 +81,11 @@ final class SettingsManagerFontSettingsTests: XCTestCase {
         XCTAssertEqual(sut.editorFontSize, 72)
     }
 
+    func test_editorLineHeight_canBeSet() {
+        sut.editorLineHeight = 1.9
+        XCTAssertEqual(sut.editorLineHeight, 1.9, accuracy: 0.001)
+    }
+
     // MARK: - Persistence
 
     func test_editorBodyFontFamily_persistsToDisk() {
@@ -104,16 +115,28 @@ final class SettingsManagerFontSettingsTests: XCTestCase {
                        "Font size should persist to disk")
     }
 
+    func test_editorLineHeight_persistsToDisk() {
+        sut.editorLineHeight = 1.9
+
+        let reloaded = SettingsManager(configPath: configFilePath)
+
+        XCTAssertEqual(reloaded.editorLineHeight, 1.9,
+                       accuracy: 0.001,
+                       "Line height should persist to disk")
+    }
+
     func test_allFontSettings_persistTogether() {
         sut.editorBodyFontFamily = "Times New Roman"
         sut.editorMonospaceFontFamily = "Monaco"
         sut.editorFontSize = 24
+        sut.editorLineHeight = 1.8
 
         let reloaded = SettingsManager(configPath: configFilePath)
 
         XCTAssertEqual(reloaded.editorBodyFontFamily, "Times New Roman")
         XCTAssertEqual(reloaded.editorMonospaceFontFamily, "Monaco")
         XCTAssertEqual(reloaded.editorFontSize, 24)
+        XCTAssertEqual(reloaded.editorLineHeight, 1.8, accuracy: 0.001)
     }
 
     // MARK: - Missing/Invalid Fallback
@@ -166,6 +189,23 @@ final class SettingsManagerFontSettingsTests: XCTestCase {
                        "Missing font size should default to 15")
     }
 
+    func test_editorLineHeight_missingFromConfig_defaultsTo16() {
+        let yaml = """
+        onBootCommand: ''
+        fileExtensionFilter: '*.md, *.txt'
+        templatesDirectory: templates
+        autoSave: false
+        autoPush: false
+        """
+        try! yaml.write(to: URL(fileURLWithPath: configFilePath), atomically: true, encoding: .utf8)
+
+        let manager = SettingsManager(configPath: configFilePath)
+
+        XCTAssertEqual(manager.editorLineHeight, 1.6,
+                       accuracy: 0.001,
+                       "Missing line height should default to 1.6")
+    }
+
     // MARK: - Vault-Specific Isolation
 
     func test_fontSettings_areVaultSpecific() {
@@ -180,11 +220,13 @@ final class SettingsManagerFontSettingsTests: XCTestCase {
         m1.editorBodyFontFamily = "Helvetica"
         m1.editorMonospaceFontFamily = "Menlo"
         m1.editorFontSize = 18
+        m1.editorLineHeight = 1.4
 
         let m2 = SettingsManager(vaultRoot: vault2, globalConfigPath: globalConfig)
         m2.editorBodyFontFamily = "Georgia"
         m2.editorMonospaceFontFamily = "Courier"
         m2.editorFontSize = 24
+        m2.editorLineHeight = 2.0
 
         // Reload each vault and confirm their settings are independent
         let r1 = SettingsManager(vaultRoot: vault1, globalConfigPath: globalConfig)
@@ -196,6 +238,8 @@ final class SettingsManagerFontSettingsTests: XCTestCase {
                        "Vault 1's monospace font should be vault-specific")
         XCTAssertEqual(r1.editorFontSize, 18,
                        "Vault 1's font size should be vault-specific")
+        XCTAssertEqual(r1.editorLineHeight, 1.4, accuracy: 0.001,
+                       "Vault 1's line height should be vault-specific")
 
         XCTAssertEqual(r2.editorBodyFontFamily, "Georgia",
                        "Vault 2's body font should be independent of vault 1")
@@ -203,6 +247,8 @@ final class SettingsManagerFontSettingsTests: XCTestCase {
                        "Vault 2's monospace font should be independent of vault 1")
         XCTAssertEqual(r2.editorFontSize, 24,
                        "Vault 2's font size should be independent of vault 1")
+        XCTAssertEqual(r2.editorLineHeight, 2.0, accuracy: 0.001,
+                       "Vault 2's line height should be independent of vault 1")
     }
 
     // MARK: - Change Notifications
@@ -237,6 +283,17 @@ final class SettingsManagerFontSettingsTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(notifyCount, 1,
                                     "Updating font size should trigger objectWillChange")
+        cancellable.cancel()
+    }
+
+    func test_editorLineHeight_triggersSaveNotification() {
+        var notifyCount = 0
+        let cancellable = sut.objectWillChange.sink { _ in notifyCount += 1 }
+
+        sut.editorLineHeight = 1.8
+
+        XCTAssertGreaterThanOrEqual(notifyCount, 1,
+                                    "Updating line height should trigger objectWillChange")
         cancellable.cancel()
     }
 
