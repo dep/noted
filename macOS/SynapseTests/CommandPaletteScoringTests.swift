@@ -85,12 +85,7 @@ final class CommandPaletteScoringTests: XCTestCase {
     }
 
     func test_filenamePrefixMatch_yields90() {
-        let score = commandPaletteScore(
-            forURL: url("notes.txt"),
-            needle: "notes",
-            relativePath: "notes.txt"
-        )
-        // "notes" matches stem exactly → 200, not 90.  Use a different fixture.
+        // "notes" on notes.txt matches stem exactly → 200, not 90. Use different fixtures below.
         let score2 = commandPaletteScore(
             forURL: url("notes-v2.txt"),
             needle: "notes-v",

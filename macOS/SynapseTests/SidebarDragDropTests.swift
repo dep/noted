@@ -117,9 +117,7 @@ final class SidebarFileURLExtractionTests: XCTestCase {
 
     func test_extractSidebarFileURL_fromDataRepresentation_returnsURL() {
         let original = tempDir.appendingPathComponent("note.md")
-        guard let data = original.dataRepresentation else {
-            return XCTFail("Could not create data representation for URL")
-        }
+        let data = original.dataRepresentation
         let result = extractSidebarFileURL(from: data)
         XCTAssertEqual(result?.standardizedFileURL, original.standardizedFileURL,
                        "Data representation should be decoded back to the same URL")
