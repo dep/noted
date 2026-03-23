@@ -140,16 +140,16 @@ final class CommandPaletteScoringTests: XCTestCase {
     }
 
     func test_relativePathSubstringMatch_yields30_minusDepthPenalty() {
-        // needle matches somewhere in the relative path but not the filename/stem
+        // Needle must appear in the path but NOT satisfy `relPath.hasPrefix(needle)` — that
+        // branch scores 70 ("docs/index.md" + "docs" is a prefix match, not substring-only).
         let score = commandPaletteScore(
-            forURL: url("docs/index.md"),
+            forURL: url("a/docs/b.md"),
             needle: "docs",
-            relativePath: "docs/index.md"
+            relativePath: "a/docs/b.md"
         )
-        // stem = "index", filename = "index.md" — "docs" not in either
-        // relativePath = "docs/index.md" contains "docs" → base score 30.
-        // depth = 1 → penalty 2 → final score 28.
-        XCTAssertEqual(score, 28, "Relative-path substring match at depth 1 must yield 30 - 2 = 28")
+        // stem = "b", filename = "b.md" — "docs" not in either; path contains "docs" → base 30.
+        // depth = 2 (a/, docs/, b.md) → penalty 4 → final score 26.
+        XCTAssertEqual(score, 26, "Relative-path substring-only match must be 30 minus depth penalty")
     }
 
     // MARK: - Word-part fallback (multi-word)
