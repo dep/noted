@@ -106,6 +106,130 @@ final class PreviewModeTests: XCTestCase {
         XCTAssertTrue(anyVisible(in: NSRange(location: 2, length: 12)), "Blockquote content should remain visible")
     }
 
+    func test_calloutMarker_isHiddenInPreview() {
+        let text = "> [!NOTE] Remember this\n> Body"
+        textView.setPlainText(text)
+        textView.applyPreviewStyling()
+
+        let ns = text as NSString
+        XCTAssertTrue(allHidden(in: ns.range(of: "[!NOTE]")), "Callout marker should be hidden in preview")
+        XCTAssertTrue(anyVisible(in: ns.range(of: "Remember this")), "Callout title should remain visible")
+    }
+
+    func test_calloutRawSyntax_revealedWhenCursorInsideEditablePreviewHeader() {
+        let text = "> [!NOTE] Remember this\n> Body"
+        textView.setPlainText(text)
+        textView.isEditable = true
+
+        let ns = text as NSString
+        let titleRange = ns.range(of: "Remember this")
+        textView.setSelectedRange(NSRange(location: titleRange.location + 1, length: 0))
+        textView.applyPreviewStyling()
+
+        XCTAssertFalse(allHidden(in: ns.range(of: "[!NOTE]")), "Callout marker should be visible while editing inside the callout header")
+    }
+
+    func test_markdownLinkDelimiters_areHiddenInPreview() {
+        let text = "See [site](https://example.com) now"
+        textView.setPlainText(text)
+        textView.applyPreviewStyling()
+
+        let ns = text as NSString
+        XCTAssertTrue(allHidden(in: ns.range(of: "[")), "Opening markdown link bracket should be hidden")
+        XCTAssertTrue(allHidden(in: ns.range(of: "](https://example.com)")), "Markdown link destination syntax should be hidden")
+        XCTAssertTrue(anyVisible(in: ns.range(of: "site")), "Markdown link label should remain visible")
+    }
+
+    func test_wikilinkDelimitersAndAliasPrefix_areHiddenInPreview() {
+        let text = "See [[Target|Shown]] now"
+        textView.setPlainText(text)
+        textView.applyPreviewStyling()
+
+        let ns = text as NSString
+        XCTAssertTrue(allHidden(in: ns.range(of: "[[")), "Opening wikilink brackets should be hidden")
+        XCTAssertTrue(allHidden(in: ns.range(of: "Target|")), "Wikilink target prefix should be hidden when alias exists")
+        XCTAssertTrue(allHidden(in: ns.range(of: "]]")), "Closing wikilink brackets should be hidden")
+        XCTAssertTrue(anyVisible(in: ns.range(of: "Shown")), "Wikilink alias should remain visible")
+    }
+
+    func test_embedDelimiters_areHiddenInPreview() {
+        let text = "See ![[Spec]] now"
+        textView.setPlainText(text)
+        textView.applyPreviewStyling()
+
+        let ns = text as NSString
+        XCTAssertTrue(allHidden(in: ns.range(of: "![[")), "Opening embed delimiters should be hidden")
+        XCTAssertTrue(allHidden(in: ns.range(of: "]]")), "Closing embed delimiters should be hidden")
+        XCTAssertTrue(anyVisible(in: ns.range(of: "Spec")), "Embed target text should remain visible")
+    }
+
+    func test_markdownLinkRawSyntax_revealedWhenCursorInsideEditablePreview() {
+        let text = "See [site](https://example.com) now"
+        textView.setPlainText(text)
+        textView.isEditable = true
+
+        let ns = text as NSString
+        let labelRange = ns.range(of: "site")
+        textView.setSelectedRange(NSRange(location: labelRange.location + 1, length: 0))
+        textView.applyPreviewStyling()
+
+        XCTAssertFalse(allHidden(in: ns.range(of: "[")), "Opening markdown link bracket should be visible while editing inside the token")
+        XCTAssertFalse(allHidden(in: ns.range(of: "](https://example.com)")), "Markdown link destination syntax should be visible while editing inside the token")
+    }
+
+    func test_wikilinkRawSyntax_revealedWhenCursorInsideEditablePreview() {
+        let text = "See [[Target|Shown]] now"
+        textView.setPlainText(text)
+        textView.isEditable = true
+
+        let ns = text as NSString
+        let aliasRange = ns.range(of: "Shown")
+        textView.setSelectedRange(NSRange(location: aliasRange.location + 1, length: 0))
+        textView.applyPreviewStyling()
+
+        XCTAssertFalse(allHidden(in: ns.range(of: "[[")), "Opening wikilink delimiters should be visible while editing inside the token")
+        XCTAssertFalse(allHidden(in: ns.range(of: "Target|")), "Wikilink target prefix should be visible while editing inside the token")
+        XCTAssertFalse(allHidden(in: ns.range(of: "]]")), "Closing wikilink delimiters should be visible while editing inside the token")
+    }
+
+    func test_embedRawSyntax_revealedWhenCursorInsideEditablePreview() {
+        let text = "See ![[Spec]] now"
+        textView.setPlainText(text)
+        textView.isEditable = true
+
+        let ns = text as NSString
+        let specRange = ns.range(of: "Spec")
+        textView.setSelectedRange(NSRange(location: specRange.location + 1, length: 0))
+        textView.applyPreviewStyling()
+
+        XCTAssertFalse(allHidden(in: ns.range(of: "![[")), "Opening embed delimiters should be visible while editing inside the token")
+        XCTAssertFalse(allHidden(in: ns.range(of: "]]")), "Closing embed delimiters should be visible while editing inside the token")
+    }
+
+    func test_taskPrefix_remainsVisibleInEditablePreview() {
+        let text = "- [ ] Incomplete task"
+        textView.setPlainText(text)
+        textView.isEditable = true
+        textView.applyPreviewStyling()
+
+        let prefixRange = NSRange(location: 0, length: 6)
+        XCTAssertTrue(anyVisible(in: prefixRange), "Task prefix should remain visible in editable preview")
+    }
+
+    func test_markdownImageRawSyntax_revealedWhenCursorInsideEditablePreview() {
+        let text = "See ![diagram](https://example.com/diagram.png) now"
+        textView.setPlainText(text)
+        textView.isEditable = true
+
+        let ns = text as NSString
+        let captionRange = ns.range(of: "diagram")
+        textView.setSelectedRange(NSRange(location: captionRange.location + 1, length: 0))
+        textView.applyPreviewStyling()
+
+        XCTAssertFalse(allHidden(in: ns.range(of: "![")), "Opening image delimiters should be visible while editing inside the token")
+        XCTAssertFalse(allHidden(in: ns.range(of: "](https://example.com/diagram.png)")), "Image destination syntax should be visible while editing inside the token")
+    }
+
     // MARK: - Fenced code block fence visibility
 
     func test_completeFencePair_bothFencesAreHidden() {
@@ -118,6 +242,32 @@ final class PreviewModeTests: XCTestCase {
         // Closing fence "```" at index 15–17
         let closingFenceStart = (text as NSString).range(of: "```", options: [], range: NSRange(location: 4, length: text.count - 4)).location
         XCTAssertTrue(allHidden(in: NSRange(location: closingFenceStart, length: 3)), "Closing ``` of a complete pair should be hidden")
+    }
+
+    func test_completeFencePair_isHiddenInEditablePreview() {
+        let text = "```javascript\nconsole.log(`hi`)\n```"
+        textView.isEditable = true
+        textView.setPlainText(text)
+        textView.applyMarkdownStyling()
+        textView.applyPreviewStyling()
+
+        let ns = text as NSString
+        let closingFenceStart = ns.range(of: "```", options: .backwards).location
+        XCTAssertTrue(allHidden(in: NSRange(location: 0, length: 3)), "Opening fence should be hidden in editable preview")
+        XCTAssertTrue(allHidden(in: NSRange(location: closingFenceStart, length: 3)), "Closing fence should be hidden in editable preview")
+    }
+
+    func test_backticksInsideFencedCodeBlock_remainVisibleInEditablePreview() {
+        let text = "```javascript\nconsole.log(`hi`)\n```"
+        textView.isEditable = true
+        textView.setPlainText(text)
+        textView.applyMarkdownStyling()
+        textView.applyPreviewStyling()
+
+        let ns = text as NSString
+        let firstBacktick = ns.range(of: "`hi`").location
+        XCTAssertFalse(isHidden(at: firstBacktick), "Backticks inside fenced code blocks should remain visible")
+        XCTAssertFalse(isHidden(at: firstBacktick + 3), "Closing backtick inside fenced code blocks should remain visible")
     }
 
     func test_unclosedFence_remainsVisible() {
@@ -169,6 +319,20 @@ final class PreviewModeTests: XCTestCase {
 
         XCTAssertFalse(storageIsHidden(in: redrawTrackingTextView, at: 0), "Toggling hide-markdown off should restore markdown immediately")
         XCTAssertGreaterThan(redrawTrackingTextView.setNeedsDisplayCallCount, 0, "Refreshing after Cmd-E should request a redraw")
+    }
+
+    func test_refreshEditorForCurrentDisplayMode_preservesPreviewMode() {
+        let redrawTrackingTextView = RedrawTrackingTextView()
+        redrawTrackingTextView.isEditable = true
+        redrawTrackingTextView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        redrawTrackingTextView.setPlainText("# Heading\n\n- Item")
+        redrawTrackingTextView.applyPreviewStyling()
+        XCTAssertTrue(storageIsHidden(in: redrawTrackingTextView, at: 0), "Precondition: preview mode hides markdown syntax")
+
+        refreshEditorForCurrentDisplayMode(redrawTrackingTextView)
+
+        XCTAssertEqual(redrawTrackingTextView.lastAppliedEditorDisplayMode, .preview)
+        XCTAssertTrue(storageIsHidden(in: redrawTrackingTextView, at: 0), "Refreshing current display mode should preserve hide-markdown preview")
     }
 
     // MARK: - Table Rendering Tests

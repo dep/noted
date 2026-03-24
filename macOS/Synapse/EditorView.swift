@@ -845,12 +845,15 @@ struct RawEditor: NSViewRepresentable {
         var suppressSync = false
         private var stylingScheduled = false
         private var linkCheckScheduled = false
+        private var pendingRefreshRequest: (oldText: String, newText: String, editedRange: NSRange, changeInLength: Int)?
+        private var hasCoalescedEdits = false
 
         init(_ parent: RawEditor) { self.parent = parent }
 
         func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range editedRange: NSRange, changeInLength delta: Int) {
             guard !suppressSync, editedMask.contains(.editedCharacters) else { return }
             guard let tv = textView else { return }
+            let oldText = parent.text
             let newText = tv.string
             if parent.text != newText {
                 parent.text = newText
@@ -872,16 +875,38 @@ struct RawEditor: NSViewRepresentable {
             }
             if !stylingScheduled {
                 stylingScheduled = true
+                pendingRefreshRequest = (oldText, newText, editedRange, delta)
+                hasCoalescedEdits = false
                 DispatchQueue.main.async { [weak self, weak tv] in
                     guard let self, let tv else { return }
                     self.stylingScheduled = false
+                    let parser = MarkdownDocumentParser()
+                    let document = parser.parse(tv.string)
+                    let refreshPlan: MarkdownEditorRefreshPlan
+                    if self.hasCoalescedEdits {
+                        refreshPlan = .fullDocument
+                    } else if let request = self.pendingRefreshRequest, request.newText == tv.string {
+                        refreshPlan = MarkdownEditorRefreshPlan.make(
+                            oldText: request.oldText,
+                            newText: request.newText,
+                            editedRange: request.editedRange,
+                            changeInLength: request.changeInLength,
+                            document: document
+                        )
+                    } else {
+                        refreshPlan = .fullDocument
+                    }
+                    self.pendingRefreshRequest = nil
+                    self.hasCoalescedEdits = false
                     self.suppressSync = true
-                    tv.applyMarkdownStyling()
+                    tv.applyMarkdownStyling(document: document, refreshPlan: refreshPlan)
                     if self.parent.appState.settings.hideMarkdownWhileEditing {
-                        tv.applyPreviewStyling()
+                        tv.applyPreviewStyling(document: document, refreshPlan: refreshPlan)
                     }
                     self.suppressSync = false
                 }
+            } else {
+                hasCoalescedEdits = true
             }
         }
 
@@ -893,8 +918,7 @@ struct RawEditor: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard parent.appState.settings.hideMarkdownWhileEditing,
                   let tv = textView else { return }
-            tv.revealWikilinkAtCursor()
-            tv.revealImageEmbedAtCursor()
+            tv.revealSemanticInlineMarkdownAtCursor()
         }
     }
 }
@@ -905,6 +929,70 @@ func refreshEditorForHideMarkdownToggle(_ textView: LinkAwareTextView, hideMarkd
         if hideMarkdown {
             textView.applyPreviewStyling()
         }
+    }
+}
+
+func refreshEditorForCurrentDisplayMode(_ textView: LinkAwareTextView) {
+    let displayMode = textView.lastAppliedEditorDisplayMode
+    preserveScrollOffset(for: textView) {
+        textView.applyMarkdownStyling()
+        if displayMode == .preview {
+            textView.applyPreviewStyling()
+        }
+    }
+}
+
+func collapsibleToggleFrame(forMarkerRect markerRect: NSRect, textContainerOrigin: NSPoint, buttonSize: CGFloat = 28) -> NSRect {
+    // Place the button fully to the left of the list marker with a consistent gap,
+    // without clamping to textContainerOrigin so it can go into the left margin.
+    let buttonX = markerRect.minX - buttonSize - 4
+    let buttonY = round(markerRect.midY - buttonSize / 2) + 5
+    return NSRect(x: buttonX, y: buttonY, width: buttonSize, height: buttonSize)
+}
+
+func collapsibleToggleGlyphOrigin(in bounds: NSRect, glyphSize: NSSize) -> NSPoint {
+    NSPoint(
+        x: floor((bounds.width - glyphSize.width) / 2) + 1,
+        y: floor((bounds.height - glyphSize.height) / 2) - 1
+    )
+}
+
+final class CollapsibleToggleButton: NSControl {
+    var isCollapsed: Bool = false {
+        didSet { needsDisplay = true }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = false
+        focusRingType = .none
+        toolTip = "Collapse section"
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let glyph = isCollapsed ? "▸" : "▾"
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 22, weight: .semibold),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+        let glyphSize = glyph.size(withAttributes: attributes)
+        let point = collapsibleToggleGlyphOrigin(in: bounds, glyphSize: glyphSize)
+        glyph.draw(at: point, withAttributes: attributes)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        _ = target?.perform(action, with: self)
     }
 }
 
@@ -1190,11 +1278,21 @@ extension LinkAwareTextView {
     /// Hides markdown syntax tokens (delimiters, sigils, fences) by setting
     /// their font size to near-zero and foreground color to clear, so only the
     /// styled content is visible.
-    func applyPreviewStyling() {
+    func applyPreviewStyling(document: MarkdownDocument? = nil, refreshPlan: MarkdownEditorRefreshPlan = .fullDocument) {
         guard let storage = textStorage else { return }
         let fullRange = NSRange(location: 0, length: storage.length)
         guard fullRange.length > 0 else { return }
         let text = storage.string
+        let parsedDocument = document ?? MarkdownDocumentParser().parse(text)
+        let previewSemanticHiding = MarkdownPreviewSemanticHiding.make(from: parsedDocument, isEditable: isEditable)
+        let scopeRange = refreshPlan.affectedRange ?? fullRange
+        let searchRange = (text as NSString).lineRange(for: scopeRange)
+        let fencedCodeBlockRanges = parsedDocument.blocks.compactMap { block -> NSRange? in
+            if case .fencedCodeBlock = block.kind {
+                return block.range
+            }
+            return nil
+        }
 
         let hiddenAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 0.001),
@@ -1203,7 +1301,7 @@ extension LinkAwareTextView {
 
         func hide(_ pattern: String, options: NSRegularExpression.Options = []) {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return }
-            regex.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
+            regex.enumerateMatches(in: text, options: [], range: searchRange) { match, _, _ in
                 guard let range = match?.range else { return }
                 storage.addAttributes(hiddenAttrs, range: range)
             }
@@ -1211,11 +1309,17 @@ extension LinkAwareTextView {
 
         func hideGroup(_ pattern: String, group: Int, options: NSRegularExpression.Options = []) {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return }
-            regex.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
+            regex.enumerateMatches(in: text, options: [], range: searchRange) { match, _, _ in
                 guard let match, match.numberOfRanges > group else { return }
                 let r = match.range(at: group)
                 guard r.location != NSNotFound else { return }
                 storage.addAttributes(hiddenAttrs, range: r)
+            }
+        }
+
+        func isInsideFencedCodeBlock(_ range: NSRange) -> Bool {
+            fencedCodeBlockRanges.contains { blockRange in
+                NSIntersectionRange(blockRange, range).length > 0
             }
         }
 
@@ -1225,8 +1329,9 @@ extension LinkAwareTextView {
 
         storage.beginEditing()
 
-        // ATX headings: hide the "# " prefix
-        hide("^#{1,6} ", options: [.anchorsMatchLines])
+        for range in previewSemanticHiding.hiddenRanges where NSIntersectionRange(range, scopeRange).length > 0 {
+            storage.addAttributes(hiddenAttrs, range: range)
+        }
 
         // Bold **text** — hide the ** delimiters
         hideGroup("(\\*\\*)(.+?)(\\*\\*)", group: 1)
@@ -1240,34 +1345,19 @@ extension LinkAwareTextView {
         hideGroup("(?<!\\*)(\\*)(?!\\*)(.+?)(?<!\\*)(\\*)(?!\\*)", group: 3)
 
         // Inline code `code` — hide the backtick delimiters
-        hideGroup("(`)((?:[^`\\n])+)(`)", group: 1)
-        hideGroup("(`)((?:[^`\\n])+)(`)", group: 3)
-
-        // Fenced code blocks: only hide ``` fence lines that form a complete pair.
-        // An unclosed opening fence stays visible so the user knows it's open.
-        let fenceRegex = try? NSRegularExpression(pattern: "^(`{3,})[^\\n]*$", options: [.anchorsMatchLines])
-        var openFenceRanges: [(range: NSRange, marker: String)] = []
-        fenceRegex?.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
-            guard let match else { return }
-            let lineRange = match.range
-            let markerRange = match.range(at: 1)
-            guard lineRange.location != NSNotFound, markerRange.location != NSNotFound else { return }
-            let marker = (text as NSString).substring(with: markerRange)
-            if let openIdx = openFenceRanges.firstIndex(where: { $0.marker == marker }) {
-                // Matched pair — hide both fence lines
-                let openRange = openFenceRanges[openIdx].range
+        if let regex = try? NSRegularExpression(pattern: "(`)((?:[^`\\n])+)(`)") {
+            regex.enumerateMatches(in: text, options: [], range: searchRange) { match, _, _ in
+                guard let match, match.numberOfRanges > 3 else { return }
+                let openRange = match.range(at: 1)
+                let closeRange = match.range(at: 3)
+                guard openRange.location != NSNotFound, closeRange.location != NSNotFound else { return }
+                if isInsideFencedCodeBlock(match.range(at: 0)) {
+                    return
+                }
                 storage.addAttributes(hiddenAttrs, range: openRange)
-                storage.addAttributes(hiddenAttrs, range: lineRange)
-                openFenceRanges.remove(at: openIdx)
-            } else {
-                openFenceRanges.append((range: lineRange, marker: marker))
+                storage.addAttributes(hiddenAttrs, range: closeRange)
             }
         }
-        // Unmatched opening fences are intentionally left visible.
-
-        // Blockquote "> " prefix — hide the sigil
-        hide("^> ", options: [.anchorsMatchLines])
-
 
         // Image embeds ![caption](url) — hide ![ and ](url), keep caption visible.
         // Only hide when caption is non-empty; if [] leave the full markdown visible.
@@ -1276,7 +1366,7 @@ extension LinkAwareTextView {
 
         // Dim caption text for image embeds
         let imageCaptionRegex = try? NSRegularExpression(pattern: "!\\[([^\\]]+)\\]\\([^)]+\\)")
-        imageCaptionRegex?.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
+        imageCaptionRegex?.enumerateMatches(in: text, options: [], range: searchRange) { match, _, _ in
             guard let match, match.numberOfRanges > 1 else { return }
             let captionRange = match.range(at: 1)
             guard captionRange.location != NSNotFound else { return }
@@ -1285,96 +1375,60 @@ extension LinkAwareTextView {
             ], range: captionRange)
         }
 
-        // Markdown links [label](url) — hide [, ](url) parts, keep label visible
-        // (negative lookbehind not needed here as images matched above first)
-        hideGroup("((?<!!)\\[)([^\\]]+)(\\]\\([^)]+\\))", group: 1)
-        hideGroup("((?<!!)\\[)([^\\]]+)(\\]\\([^)]+\\))", group: 3)
-
-        // Wiki links [[note]] or [[note|alias]] — hide [[ and ]]
-        hideGroup("(\\[\\[)([^\\]]+)(\\]\\])", group: 1)
-        hideGroup("(\\[\\[)([^\\]]+)(\\]\\])", group: 3)
-        // When an alias is present ([[note|alias]]), also hide the "note|" prefix
-        // so only the alias text is visible.
-        hideGroup("(\\[\\[)([^\\]|]+\\|)([^\\]]+)(\\]\\])", group: 2)
-
-        // Embed ![[note]] — hide ![[  and  ]]
-        hideGroup("(!\\[\\[)([^\\]]+)(\\]\\])", group: 1)
-        hideGroup("(!\\[\\[)([^\\]]+)(\\]\\])", group: 3)
-
-        // YAML frontmatter block: hide the --- fences only in read-only preview.
-        // In hideMarkdownWhileEditing mode the view is still editable, so we
-        // leave the fences visible to make frontmatter easier to manage.
-        if !isEditable {
-            let fullString = text
-            if fullString.hasPrefix("---") {
-                let lines = fullString.components(separatedBy: "\n")
-                var fenceCount = 0
-                var charOffset = 0
-                for line in lines {
-                    let lineLength = (line as NSString).length
-                    if line == "---" {
-                        let fenceRange = NSRange(location: charOffset, length: lineLength)
-                        storage.addAttributes(hiddenAttrs, range: fenceRange)
-                        fenceCount += 1
-                        if fenceCount == 2 { break }
-                    }
-                    charOffset += lineLength + 1
-                }
-            }
-        }
-
         storage.endEditing()
-        requestImmediateRedraw(for: fullRange)
+        requestImmediateRedraw(for: scopeRange)
         lastAppliedEditorDisplayMode = .preview
+        refreshTaskCheckboxButtons()
 
         // After hiding, reveal the wikilink/image embed the cursor is currently inside.
         if isEditable {
-            revealWikilinkAtCursor()
-            revealImageEmbedAtCursor()
+            revealSemanticInlineMarkdownAtCursor()
+            revealCalloutHeaderAtCursor(document: parsedDocument)
         }
     }
 
-    /// Unhides the [[/]] delimiters (and any alias prefix) of the wikilink that
-    /// contains the cursor, so the user can see and edit the raw syntax.
-    func revealWikilinkAtCursor() {
+    private func revealCalloutHeaderAtCursor(document: MarkdownDocument? = nil) {
         guard let storage = textStorage else { return }
         let cursor = selectedRange().location
         guard cursor != NSNotFound else { return }
-        let nsText = storage.string as NSString
-        let len = nsText.length
-        guard len > 0 else { return }
-
-        // Find the nearest [[ before the cursor on the same line.
-        let lineStart = nsText.lineRange(for: NSRange(location: min(cursor, len - 1), length: 0)).location
-        let searchLen = min(cursor, len) - lineStart
-        guard searchLen >= 0 else { return }
-        let sub = nsText.substring(with: NSRange(location: lineStart, length: searchLen)) as NSString
-        let bracketRange = sub.range(of: "[[", options: .backwards)
-        guard bracketRange.location != NSNotFound else { return }
-
-        let absStart = lineStart + bracketRange.location
-        // Find the closing ]] after the cursor.
-        let afterCursor = min(cursor, len)
-        let searchAfterLen = len - afterCursor
-        guard searchAfterLen >= 0 else { return }
-        let afterSub = nsText.substring(with: NSRange(location: afterCursor, length: searchAfterLen)) as NSString
-        let closeRange = afterSub.range(of: "]]")
-        guard closeRange.location != NSNotFound else { return }
-        let absEnd = afterCursor + closeRange.location + 2  // past ]]
-
-        // Make sure no newline is between [[ and ]]
-        let tokenRange = NSRange(location: absStart, length: absEnd - absStart)
-        guard tokenRange.length <= 200 else { return }
-        let token = nsText.substring(with: tokenRange)
-        guard !token.contains("\n") else { return }
+        let parsedDocument = document ?? MarkdownDocumentParser().parse(storage.string)
+        let callouts = parsedDocument.blocks.compactMap { MarkdownCalloutDetector.detect(in: $0, source: parsedDocument.source) }
+        guard let callout = callouts.first(where: { NSLocationInRange(cursor, $0.headerRange) }) else { return }
 
         let visibleAttrs: [NSAttributedString.Key: Any] = [
             .font: MarkdownTheme.body,
             .foregroundColor: MarkdownTheme.dimColor,
         ]
         storage.beginEditing()
-        storage.addAttributes(visibleAttrs, range: tokenRange)
+        storage.addAttributes(visibleAttrs, range: callout.headerRange)
         storage.endEditing()
+    }
+
+    func revealSemanticInlineMarkdownAtCursor() {
+        guard let storage = textStorage else { return }
+        let reveal = MarkdownPreviewCursorReveal.make(
+            from: storage.string,
+            cursorLocation: selectedRange().location,
+            isEditable: isEditable
+        )
+        guard !reveal.revealedRanges.isEmpty else { return }
+
+        let visibleAttrs: [NSAttributedString.Key: Any] = [
+            .font: MarkdownTheme.body,
+            .foregroundColor: MarkdownTheme.dimColor,
+        ]
+
+        storage.beginEditing()
+        for range in reveal.revealedRanges {
+            storage.addAttributes(visibleAttrs, range: range)
+        }
+        storage.endEditing()
+    }
+
+    /// Unhides the [[/]] delimiters (and any alias prefix) of the wikilink that
+    /// contains the cursor, so the user can see and edit the raw syntax.
+    func revealWikilinkAtCursor() {
+        revealSemanticInlineMarkdownAtCursor()
     }
 
     /// Unhides the full `![caption](url)` token containing the cursor so the
@@ -1410,13 +1464,14 @@ extension LinkAwareTextView {
         }
     }
 
-    func applyMarkdownStyling() {
+    func applyMarkdownStyling(document: MarkdownDocument? = nil, refreshPlan: MarkdownEditorRefreshPlan = .fullDocument) {
         guard let storage = textStorage else { return }
         let fullRange = NSRange(location: 0, length: storage.length)
         guard fullRange.length > 0 else {
             lastAppliedEditorFontSignature = EditorFontSignature(settings: settings)
             lastAppliedEditorDisplayMode = .markdown
             clearInlineImagePreviews()
+            clearTaskCheckboxButtons()
             for key in Array(collapsibleToggleButtons.keys) {
                 collapsibleToggleButtons[key]?.removeFromSuperview()
             }
@@ -1424,7 +1479,13 @@ extension LinkAwareTextView {
             return
         }
         let text = storage.string as NSString
+        let parsedDocument = document ?? MarkdownDocumentParser().parse(storage.string)
+        let scopeRange = refreshPlan.affectedRange ?? fullRange
+        let searchRange = text.lineRange(for: scopeRange)
         lastAppliedEditorDisplayMode = .markdown
+        clearTaskCheckboxButtons()
+        let semanticStyles = MarkdownEditorSemanticStyles.make(from: parsedDocument)
+        let inlineSemanticStyles = MarkdownEditorInlineSemanticStyles.make(from: parsedDocument)
 
         storage.beginEditing()
 
@@ -1448,45 +1509,39 @@ extension LinkAwareTextView {
             .font: bodyFont,
             .foregroundColor: SynapseTheme.editorForeground,
             .paragraphStyle: baseParagraphStyle,
-        ], range: fullRange)
+        ], range: scopeRange)
 
-        let headerPatterns: [(String, NSFont)] = [
-            ("^#{6} .+$", h4Font),
-            ("^#{5} .+$", h4Font),
-            ("^#{4} .+$", h4Font),
-            ("^### .+$",  h3Font),
-            ("^## .+$",   h2Font),
-            ("^# .+$",    h1Font),
-        ]
-        for (pattern, font) in headerPatterns {
-            applyRegex(pattern, to: text, storage: storage, options: [.anchorsMatchLines]) { range in
-                storage.addAttributes([.font: font], range: range)
-                if let hashEnd = (storage.string as NSString).substring(with: range).range(of: "^#{1,6} ", options: .regularExpression),
-                   let sub = Range(range, in: storage.string) {
-                    let nsHashRange = NSRange(hashEnd, in: String(storage.string[sub]))
-                    let absRange = NSRange(location: range.location + nsHashRange.location, length: nsHashRange.length)
-                    storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: absRange)
-                }
+        for heading in semanticStyles.headings {
+            guard NSIntersectionRange(heading.range, scopeRange).length > 0 else { continue }
+            let font: NSFont
+            switch heading.level {
+            case 1: font = h1Font
+            case 2: font = h2Font
+            case 3: font = h3Font
+            default: font = h4Font
             }
+            storage.addAttributes([.font: font], range: heading.range)
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: heading.markerRange)
         }
 
-        applyRegex("\\*\\*(.+?)\\*\\*", to: text, storage: storage) { range in
+        applyRegex("\\*\\*(.+?)\\*\\*", to: text, storage: storage, searchRange: searchRange) { range in
             storage.addAttribute(.font, value: boldFont, range: range)
             dimDelimiters(storage: storage, outerRange: range, delimLen: 2)
         }
-        applyRegex("__(.+?)__", to: text, storage: storage) { range in
+        applyRegex("__(.+?)__", to: text, storage: storage, searchRange: searchRange) { range in
             storage.addAttribute(.font, value: boldFont, range: range)
             dimDelimiters(storage: storage, outerRange: range, delimLen: 2)
         }
-        applyRegex("\\*(?!\\*)(.+?)(?<!\\*)\\*", to: text, storage: storage) { range in
+        applyRegex("\\*(?!\\*)(.+?)(?<!\\*)\\*", to: text, storage: storage, searchRange: searchRange) { range in
             storage.addAttribute(.font, value: italicFont, range: range)
             dimDelimiters(storage: storage, outerRange: range, delimLen: 1)
         }
-        applyRegex("`([^`\\n]+)`", to: text, storage: storage) { range in
+        applyRegex("`([^`\\n]+)`", to: text, storage: storage, searchRange: searchRange) { range in
             storage.addAttributes([.font: monoFont, .backgroundColor: MarkdownTheme.codeBackground], range: range)
         }
         let codePad: CGFloat = 10
-        applyRegex("```[\\s\\S]*?```", to: text, storage: storage) { range in
+        for range in semanticStyles.codeBlocks {
+            guard NSIntersectionRange(range, scopeRange).length > 0 else { continue }
             storage.addAttributes([.font: monoFont, .backgroundColor: MarkdownTheme.codeBackground, .foregroundColor: SynapseTheme.editorForeground], range: range)
             // Add top padding to the opening fence line and bottom padding to the closing fence line
             // so the code block has breathing room and the copy button has space to sit in.
@@ -1496,68 +1551,92 @@ extension LinkAwareTextView {
             let firstParaStyle = (storage.attribute(.paragraphStyle, at: firstLineRange.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
             firstParaStyle.paragraphSpacingBefore = codePad
             storage.addAttribute(.paragraphStyle, value: firstParaStyle, range: firstLineRange)
-            // Last line of block → paragraphSpacing (after)
+            // Last line of block → paragraphSpacing (after) and full-width background
             let lastLineRange = nsStr.lineRange(for: NSRange(location: range.location + range.length - 1, length: 0))
             let lastParaStyle = (storage.attribute(.paragraphStyle, at: lastLineRange.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
             lastParaStyle.paragraphSpacing = codePad
+            // Extend the last line's background to the full line width by appending a trailing tab stop
+            // at a very large position so the NSTextView background fill spans the container edge.
+            lastParaStyle.tailIndent = 0
+            lastParaStyle.lineBreakMode = .byWordWrapping
             storage.addAttribute(.paragraphStyle, value: lastParaStyle, range: lastLineRange)
         }
-        applyRegex("^> .+$", to: text, storage: storage, options: [.anchorsMatchLines]) { range in
+        let calloutRanges = Set(semanticStyles.callouts.map { "\($0.range.location):\($0.range.length)" })
+        for range in semanticStyles.blockquotes {
+            guard !calloutRanges.contains("\(range.location):\(range.length)") else { continue }
+            guard NSIntersectionRange(range, scopeRange).length > 0 else { continue }
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
         }
+        for callout in semanticStyles.callouts {
+            guard NSIntersectionRange(callout.range, scopeRange).length > 0 else { continue }
+            let background = MarkdownTheme.codeBackground.blended(withFraction: 0.2, of: MarkdownTheme.linkColor) ?? MarkdownTheme.codeBackground
+            storage.addAttributes([
+                .backgroundColor: background,
+                .foregroundColor: SynapseTheme.editorForeground,
+            ], range: callout.range)
+            storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: callout.markerRange)
+            if let titleRange = callout.titleRange {
+                storage.addAttributes([
+                    .font: boldFont,
+                    .foregroundColor: MarkdownTheme.linkColor,
+                ], range: titleRange)
+            }
+        }
+        if let frontmatter = semanticStyles.frontmatter {
+            if NSIntersectionRange(frontmatter.contentRange, scopeRange).length > 0 {
+                storage.addAttributes([
+                    .font: NSFont.systemFont(ofSize: 11),
+                    .foregroundColor: SynapseTheme.editorMuted,
+                ], range: frontmatter.contentRange)
+            }
+            let openingFence = NSRange(location: frontmatter.range.location, length: min(3, frontmatter.range.length))
+            let closingFence = NSRange(location: frontmatter.range.location + frontmatter.range.length - 3, length: min(3, frontmatter.range.length))
+            if NSIntersectionRange(openingFence, scopeRange).length > 0 {
+                storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: openingFence)
+            }
+            if NSIntersectionRange(closingFence, scopeRange).length > 0 {
+                storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: closingFence)
+            }
+        }
         AppState.inlineTagMatches(in: storage.string).forEach { match in
+            guard NSIntersectionRange(match.range, scopeRange).length > 0 else { return }
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.tagColor, range: match.range)
             storage.addAttribute(.tagTarget, value: match.normalized, range: match.range)
         }
-        // Style embed patterns (![[note]]) - dimmed since they'll be rendered as blocks below
-        applyRegex("!\\[\\[[^\\]]+\\]\\]", to: text, storage: storage) { range in
-            guard range.length > 5 else { return }
-            let inner = (text.substring(with: range) as NSString)
-                .substring(with: NSRange(location: 3, length: range.length - 5))
-            storage.addAttributes([
-                .foregroundColor: MarkdownTheme.dimColor,
-                .link: inner,
-            ], range: range)
-        }
         let noteNames = Set(allFiles.map { $0.deletingPathExtension().lastPathComponent.lowercased() })
-        applyRegex("\\[\\[[^\\]]+\\]\\]", to: text, storage: storage) { range in
-            guard range.length > 4 else { return }
-            let inner = (text.substring(with: range) as NSString)
-                .substring(with: NSRange(location: 2, length: range.length - 4))
-            // Strip alias and heading components for resolution check
-            let baseName = (inner.components(separatedBy: "|").first ?? inner)
-                .components(separatedBy: "#").first?
-                .trimmingCharacters(in: .whitespaces) ?? inner
-            let resolved = !noteNames.isEmpty && noteNames.contains(baseName.lowercased())
-            // Use a custom attribute instead of .link so NSTextView doesn't override our foreground color.
-            storage.addAttributes([
-                .foregroundColor: resolved ? MarkdownTheme.linkColor : MarkdownTheme.unresolvedLinkColor,
-                .underlineStyle: NSUnderlineStyle.single.rawValue,
-                .wikilinkTarget: inner,
-            ], range: range)
-        }
-        if let markdownLinkRegex = LinkAwareTextView.markdownLinkRegex {
-            markdownLinkRegex.enumerateMatches(in: storage.string, range: fullRange) { match, _, _ in
-                guard let match, match.numberOfRanges >= 3 else { return }
-                let full = match.range(at: 0)
-                let label = match.range(at: 1)
-                let destinationRange = match.range(at: 2)
-                let destination = text.substring(with: destinationRange).trimmingCharacters(in: .whitespacesAndNewlines)
-
-                storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: full)
+        for entry in inlineSemanticStyles.entries {
+            guard NSIntersectionRange(entry.range, scopeRange).length > 0 || NSIntersectionRange(entry.contentRange, scopeRange).length > 0 else { continue }
+            switch entry.kind {
+            case let .embed(rawTarget):
+                storage.addAttributes([
+                    .foregroundColor: MarkdownTheme.dimColor,
+                    .link: rawTarget,
+                ], range: entry.range)
+            case let .wikiLink(rawTarget, destination, _):
+                let baseName = destination
+                    .components(separatedBy: "#").first?
+                    .trimmingCharacters(in: .whitespaces) ?? destination
+                let resolved = !noteNames.isEmpty && noteNames.contains(baseName.lowercased())
+                storage.addAttributes([
+                    .foregroundColor: resolved ? MarkdownTheme.linkColor : MarkdownTheme.unresolvedLinkColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .wikilinkTarget: rawTarget,
+                ], range: entry.range)
+            case let .markdownLink(destination):
+                storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: entry.range)
                 storage.addAttributes([
                     .foregroundColor: MarkdownTheme.linkColor,
                     .underlineStyle: NSUnderlineStyle.single.rawValue,
-                ], range: label)
+                ], range: entry.contentRange)
 
                 if let url = URL(string: destination), url.scheme != nil {
-                    storage.addAttribute(.link, value: url, range: full)
+                    storage.addAttribute(.link, value: url, range: entry.range)
                 }
             }
         }
 
         if let bareURLRegex = LinkAwareTextView.bareURLRegex {
-            bareURLRegex.enumerateMatches(in: storage.string, options: [], range: fullRange) { match, _, _ in
+            bareURLRegex.enumerateMatches(in: storage.string, options: [], range: searchRange) { match, _, _ in
                 guard let match else { return }
                 let range = match.range
                 guard range.location != NSNotFound, range.length > 0 else { return }
@@ -1576,31 +1655,9 @@ extension LinkAwareTextView {
                 ], range: range)
             }
         }
-        applyRegex("^---$", to: text, storage: storage, options: [.anchorsMatchLines]) { range in
+        for range in semanticStyles.thematicBreaks {
+            guard NSIntersectionRange(range, scopeRange).length > 0 else { continue }
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
-        }
-
-        // Style YAML frontmatter block (between first --- pair) with smaller, muted text
-        let fullString = storage.string
-        if fullString.hasPrefix("---") {
-            let lines = fullString.components(separatedBy: "\n")
-            var fenceCount = 0
-            var charOffset = 0
-            for line in lines {
-                let lineLength = (line as NSString).length
-                if line == "---" {
-                    fenceCount += 1
-                    if fenceCount == 2 { break }
-                    charOffset += lineLength + 1
-                } else if fenceCount == 1 {
-                    let lineRange = NSRange(location: charOffset, length: lineLength)
-                    storage.addAttributes([
-                        .font: NSFont.systemFont(ofSize: 11),
-                        .foregroundColor: SynapseTheme.editorMuted,
-                    ], range: lineRange)
-                    charOffset += lineLength + 1
-                }
-            }
         }
 
         // Image embeds are now shown only in sidebar, not inline
@@ -1619,7 +1676,7 @@ extension LinkAwareTextView {
         applyCollapsibleStyling(storage: storage)
         storage.endEditing()
         lastAppliedEditorFontSignature = EditorFontSignature(settings: settings)
-        requestImmediateRedraw(for: fullRange)
+        requestImmediateRedraw(for: scopeRange)
         reapplySearchHighlights()
         DispatchQueue.main.async { [weak self] in
             self?.refreshInlineImagePreviews()
@@ -1633,7 +1690,7 @@ extension LinkAwareTextView {
     private static let markdownLinkRegex = try? NSRegularExpression(pattern: "(?<!!)\\[([^\\]]+)\\]\\(([^)]+)\\)")
     private static let bareURLRegex = try? NSRegularExpression(pattern: #"https?://[^"]+?(?=[\s)\]>]|$)"#)
 
-    private func applyRegex(_ pattern: String, to text: NSString, storage: NSTextStorage, options: NSRegularExpression.Options = [], apply: (NSRange) -> Void) {
+    private func applyRegex(_ pattern: String, to text: NSString, storage: NSTextStorage, options: NSRegularExpression.Options = [], searchRange: NSRange? = nil, apply: (NSRange) -> Void) {
         let cacheKey = "\(pattern)|\(options.rawValue)"
         let regex: NSRegularExpression
         if let cached = LinkAwareTextView.regexCache[cacheKey] {
@@ -1644,7 +1701,8 @@ extension LinkAwareTextView {
         } else {
             return
         }
-        regex.enumerateMatches(in: text as String, options: [], range: NSRange(location: 0, length: text.length)) { match, _, _ in
+        let range = searchRange ?? NSRange(location: 0, length: text.length)
+        regex.enumerateMatches(in: text as String, options: [], range: range) { match, _, _ in
             guard let range = match?.range else { return }
             apply(range)
         }
@@ -1661,9 +1719,17 @@ extension LinkAwareTextView {
         if let layoutManager, let textContainer {
             layoutManager.invalidateDisplay(forCharacterRange: range)
             layoutManager.ensureLayout(for: textContainer)
+            var redrawRect = layoutManager.boundingRect(forGlyphRange: layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: textContainer)
+            redrawRect.origin.x += textContainerOrigin.x
+            redrawRect.origin.y += textContainerOrigin.y
+            if !redrawRect.isEmpty {
+                setNeedsDisplay(redrawRect.insetBy(dx: -24, dy: -24))
+            }
         }
         needsDisplay = true
-        setNeedsDisplay(bounds)
+        if range.length == (textStorage?.length ?? 0) {
+            setNeedsDisplay(bounds)
+        }
     }
 
     // MARK: - Collapsible section toggle buttons
@@ -1746,33 +1812,32 @@ extension LinkAwareTextView {
             let sectionId = section.getIdentifier()
             let isCollapsed = collapsibleStateManager.isCollapsed(sectionId, in: fileURL)
 
-            // Get the rect of the header line
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: section.headerRange, actualCharacterRange: nil)
-            var lineRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            lineRect.origin.x += textContainerOrigin.x
-            lineRect.origin.y += textContainerOrigin.y
+            // Anchor the disclosure control to the list marker itself so it aligns
+            // with the first visible line rather than the broader header range.
+            let markerRange = NSRange(location: section.headerRange.location, length: 1)
+            let markerGlyphRange = layoutManager.glyphRange(forCharacterRange: markerRange, actualCharacterRange: nil)
+            var markerRect = layoutManager.boundingRect(forGlyphRange: markerGlyphRange, in: textContainer)
+            markerRect.origin.x += textContainerOrigin.x
+            markerRect.origin.y += textContainerOrigin.y
 
-            let buttonSize: CGFloat = 14
-            let buttonX = textContainerOrigin.x - buttonSize - 4
-            let buttonY = lineRect.midY - buttonSize / 2
+            let buttonSize: CGFloat = 28
+            let buttonFrame = collapsibleToggleFrame(
+                forMarkerRect: markerRect,
+                textContainerOrigin: textContainerOrigin,
+                buttonSize: buttonSize
+            )
 
-            let button: NSButton
+            let button: CollapsibleToggleButton
             if let existing = collapsibleToggleButtons[sectionId] {
                 button = existing
             } else {
-                button = NSButton(frame: NSRect(x: buttonX, y: buttonY, width: buttonSize, height: buttonSize))
-                button.bezelStyle = .inline
-                button.isBordered = false
-                button.wantsLayer = true
-                button.layer?.cornerRadius = 2
+                button = CollapsibleToggleButton(frame: buttonFrame)
                 addSubview(button)
                 collapsibleToggleButtons[sectionId] = button
             }
 
-            button.title = isCollapsed ? "▶" : "▼"
-            button.font = NSFont.systemFont(ofSize: 9, weight: .medium)
-            button.contentTintColor = NSColor.secondaryLabelColor
-            button.frame = NSRect(x: buttonX, y: buttonY, width: buttonSize, height: buttonSize)
+            button.isCollapsed = isCollapsed
+            button.frame = buttonFrame
             button.toolTip = isCollapsed ? "Expand section" : "Collapse section"
 
             // Use target/action — capture the identifier by value
@@ -1783,15 +1848,13 @@ extension LinkAwareTextView {
         }
     }
 
-    @objc private func collapsibleToggleTapped(_ sender: NSButton) {
+    @objc private func collapsibleToggleTapped(_ sender: NSControl) {
         let sectionId = sender.identifier?.rawValue ?? ""
         guard !sectionId.isEmpty else { return }
         let fileURL = currentFileURL ?? AppConstants.unsavedFileURL
         let current = collapsibleStateManager.isCollapsed(sectionId, in: fileURL)
         collapsibleStateManager.setCollapsed(!current, for: sectionId, in: fileURL)
-        preserveScrollOffset(for: self) {
-            self.applyMarkdownStyling()
-        }
+        refreshEditorForCurrentDisplayMode(self)
     }
 
     private func clearInlineImagePreviews() {
@@ -1831,7 +1894,7 @@ private func debugLog(_ msg: String) {
 // MARK: - LinkAwareTextView
 
 class LinkAwareTextView: NSTextView {
-    fileprivate enum EditorDisplayMode {
+    enum EditorDisplayMode {
         case markdown
         case preview
     }
@@ -1867,7 +1930,7 @@ class LinkAwareTextView: NSTextView {
     fileprivate var pendingWikilinkAlias: String? = nil
     /// Original selection captured before the wikilink palette steals focus.
     fileprivate var pendingWikilinkSelectionRange: NSRange? = nil
-    fileprivate var lastAppliedEditorDisplayMode: EditorDisplayMode? = nil
+    var lastAppliedEditorDisplayMode: EditorDisplayMode? = nil
     private var eventMonitor: Any?
     private var inlineImageViews: [String: NSImageView] = [:]
     private var inlineVideoViews: [String: YouTubePreviewView] = [:]
@@ -1882,7 +1945,7 @@ class LinkAwareTextView: NSTextView {
     private let collapsibleParser = CollapsibleSectionParser()
     private let collapsibleStateManager = CollapsibleStateManager()
     /// Toggle buttons keyed by section identifier ("headerOffset-headerLength")
-    private var collapsibleToggleButtons: [String: NSButton] = [:]
+    private var collapsibleToggleButtons: [String: CollapsibleToggleButton] = [:]
 
     // MARK: - Embedded Notes (for side panel)
     private static let embedRegex = try? NSRegularExpression(pattern: #"!\[\[([^\]]+)\]\]"#)
@@ -1900,6 +1963,11 @@ class LinkAwareTextView: NSTextView {
             return
         }
         let point = convert(event.locationInWindow, from: nil)
+
+        if let hit = taskCheckboxTarget(at: point) {
+            _ = toggleTaskCheckbox(atCharacterIndex: hit.markerRange.location)
+            return
+        }
 
         // Check if clicking on an image markdown
         if let embedID = imageEmbedTarget(at: point) {
@@ -1945,7 +2013,8 @@ class LinkAwareTextView: NSTextView {
         let point = convert(event.locationInWindow, from: nil)
 
         // Check if hovering over an interactive element
-        if imageEmbedTarget(at: point) != nil ||
+        if taskCheckboxTarget(at: point) != nil ||
+           imageEmbedTarget(at: point) != nil ||
            wikilinkTarget(at: point) != nil ||
            tagTarget(at: point) != nil ||
            urlTarget(at: point) != nil {
@@ -2253,6 +2322,13 @@ class LinkAwareTextView: NSTextView {
         let sel = selectedRange()
         let nsText = string as NSString
 
+        if sel.length == 0,
+           let layout = MarkdownTableEditing.tableLayout(in: string, at: sel.location),
+           let nextCell = layout.nextCell(after: sel.location) {
+            setSelectedRange(nextCell.contentRange.length > 0 ? nextCell.contentRange : NSRange(location: nextCell.contentRange.location, length: 0))
+            return
+        }
+
         // Determine whether the selection spans more than one line.
         let selText = sel.length > 0 ? nsText.substring(with: sel) : ""
         let spansMultipleLines = selText.contains("\n")
@@ -2321,6 +2397,15 @@ class LinkAwareTextView: NSTextView {
         let cursor = selectedRange().location
         let nsText = string as NSString
         guard cursor != NSNotFound else { super.insertNewline(sender); return }
+
+        if let insertion = MarkdownTableEditing.insertionForNewRow(in: string, at: cursor) {
+            if shouldChangeText(in: insertion.range, replacementString: insertion.replacement) {
+                replaceCharacters(in: insertion.range, with: insertion.replacement)
+                didChangeText()
+                setSelectedRange(insertion.selection)
+                return
+            }
+        }
 
         // Find the start of the current line.
         let lineRange = nsText.lineRange(for: NSRange(location: cursor, length: 0))
@@ -2423,6 +2508,11 @@ class LinkAwareTextView: NSTextView {
         }
         // Shift-Tab on a multi-line selection → dedent.
         if event.keyCode == KeyCode.tab, event.modifierFlags.contains(.shift) {
+            if let layout = MarkdownTableEditing.tableLayout(in: string, at: selectedRange().location),
+               let previousCell = layout.previousCell(before: selectedRange().location) {
+                setSelectedRange(previousCell.contentRange.length > 0 ? previousCell.contentRange : NSRange(location: previousCell.contentRange.location, length: 0))
+                return
+            }
             let sel = selectedRange()
             let selText = sel.length > 0 ? (string as NSString).substring(with: sel) : ""
             if selText.contains("\n") {
@@ -4898,7 +4988,6 @@ extension LinkAwareTextView {
             codeBlockCopyButtons[key]?.removeFromSuperview()
             codeBlockCopyButtons.removeValue(forKey: key)
         }
-
         let buttonSize: CGFloat = 24
         let buttonMargin: CGFloat = 8
         let minBlockHeight = buttonSize + buttonMargin * 2
@@ -5004,95 +5093,7 @@ struct MarkdownPreviewView: NSViewRepresentable {
     }
 
     private func generateHTML(from markdown: String, isDarkMode: Bool) -> String {
-        let lines = markdown.components(separatedBy: "\n")
-        var result: [String] = []
-        var i = 0
-
-        while i < lines.count {
-            let line = lines[i]
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
-                var tableLines: [String] = []
-                var j = i
-                while j < lines.count {
-                    let tableLine = lines[j].trimmingCharacters(in: .whitespaces)
-                    if tableLine.hasPrefix("|") && tableLine.hasSuffix("|") {
-                        tableLines.append(lines[j])
-                        j += 1
-                    } else {
-                        break
-                    }
-                }
-
-                if tableLines.count >= 2 {
-                    result.append(convertTableBlockToHTML(tableLines))
-                    i = j
-                    continue
-                }
-            }
-
-            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
-                var listItems: [String] = []
-                var j = i
-                while j < lines.count {
-                    let listLine = lines[j].trimmingCharacters(in: .whitespaces)
-                    if listLine.hasPrefix("- ") || listLine.hasPrefix("* ") {
-                        listItems.append("<li>\(escapeHTML(String(listLine.dropFirst(2))))</li>")
-                        j += 1
-                    } else {
-                        break
-                    }
-                }
-
-                if !listItems.isEmpty {
-                    result.append("<ul>\(listItems.joined(separator: ""))</ul>")
-                    i = j
-                    continue
-                }
-            }
-
-            if let _ = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) {
-                var listItems: [String] = []
-                var j = i
-                while j < lines.count {
-                    let listLine = lines[j].trimmingCharacters(in: .whitespaces)
-                    if let match = listLine.range(of: "^\\d+\\. ", options: .regularExpression) {
-                        listItems.append("<li>\(escapeHTML(String(listLine[match.upperBound...])))</li>")
-                        j += 1
-                    } else {
-                        break
-                    }
-                }
-
-                if !listItems.isEmpty {
-                    result.append("<ol>\(listItems.joined(separator: ""))</ol>")
-                    i = j
-                    continue
-                }
-            }
-
-            if trimmed.hasPrefix("```") {
-                var codeLines: [String] = []
-                var j = i
-                while j < lines.count {
-                    codeLines.append(lines[j])
-                    if j > i && lines[j].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                        j += 1
-                        break
-                    }
-                    j += 1
-                }
-                result.append(convertCodeBlockToHTML(codeLines))
-                i = j
-                continue
-            }
-
-            result.append(convertLineToHTML(line))
-            i += 1
-        }
-        
-        let html = result.joined(separator: "\n")
+        let html = MarkdownPreviewRenderer().renderBody(from: markdown)
         
         let textColor = isDarkMode ? "#E0E0E0" : "#333333"
         let backgroundColor = isDarkMode ? "#1E1E1E" : "#FFFFFF"
@@ -5185,12 +5186,48 @@ struct MarkdownPreviewView: NSViewRepresentable {
                     padding-left: 16px;
                     color: \(isDarkMode ? "#AAAAAA" : "#666666");
                 }
+                .callout {
+                    border-left-color: \(isDarkMode ? "#6B9BFF" : "#0066CC");
+                    background: \(isDarkMode ? "rgba(107, 155, 255, 0.08)" : "rgba(0, 102, 204, 0.06)");
+                    border-radius: 8px;
+                    padding: 12px 14px;
+                    color: \(textColor);
+                }
+                .callout-title {
+                    font-weight: 700;
+                    margin-bottom: 6px;
+                }
+                .callout-body {
+                    color: \(textColor);
+                }
                 a {
                     color: \(isDarkMode ? "#6B9BFF" : "#0066CC");
                     text-decoration: none;
                 }
                 a:hover {
                     text-decoration: underline;
+                }
+                a.wikilink {
+                    font-weight: 500;
+                }
+                .embed {
+                    display: inline-block;
+                    padding: 2px 8px;
+                    border-radius: 999px;
+                    background-color: \(isDarkMode ? "#2A2A2A" : "#EFEFEF");
+                    color: \(textColor);
+                }
+                .task-list {
+                    list-style: none;
+                    padding-left: 0;
+                }
+                .task-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .task-item input {
+                    accent-color: \(isDarkMode ? "#6B9BFF" : "#0066CC");
                 }
                 hr {
                     border: none;

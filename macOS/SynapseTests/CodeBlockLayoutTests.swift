@@ -2,8 +2,8 @@ import XCTest
 import AppKit
 @testable import Synapse
 
-/// Tests for code block visual layout improvements:
-/// - 10px padding above and below fenced code blocks via NSParagraphStyle
+    /// Tests for code block visual layout improvements:
+    /// - extra top padding and 10px bottom padding for fenced code blocks via NSParagraphStyle
 /// - Minimum bounding-rect height for the copy-button position calculation
 final class CodeBlockLayoutTests: XCTestCase {
 
@@ -44,9 +44,7 @@ final class CodeBlockLayoutTests: XCTestCase {
             return
         }
 
-        // The opening fence line starts at index 0
-        let fenceLineStart = 0
-        let style = storage.attribute(.paragraphStyle, at: fenceLineStart, effectiveRange: nil) as? NSParagraphStyle
+        let style = storage.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
 
         XCTAssertNotNil(style, "Opening fence line should have a paragraphStyle attribute")
         XCTAssertEqual(style?.paragraphSpacingBefore ?? 0, 10, accuracy: 0.5,

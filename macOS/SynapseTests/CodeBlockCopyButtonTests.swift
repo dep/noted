@@ -143,7 +143,7 @@ final class CodeBlockCopyButtonTests: XCTestCase {
 
         XCTAssertTrue(textView.codeBlockCopyButtons.first?.value is CodeBlockCopyButton)
     }
-    
+
     func test_createsMultipleCopyButtons() {
         let text = """
         ```
@@ -182,6 +182,8 @@ final class CodeBlockCopyButtonTests: XCTestCase {
         // Verify button was removed
         XCTAssertEqual(textView.codeBlockCopyButtons.count, 0, "Should remove copy button when code block is removed")
     }
+
+
     
     // MARK: - Copy Button Position Tests
     

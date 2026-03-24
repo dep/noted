@@ -273,6 +273,23 @@ final class CollapsibleSectionsTests: XCTestCase {
         XCTAssertEqual(textView.visibleInlineImageMatches().count, 1)
     }
 
+    func test_collapsibleToggleFrame_alignsToMarkerRect() {
+        let markerRect = NSRect(x: 72, y: 120, width: 8, height: 24)
+
+        let frame = collapsibleToggleFrame(forMarkerRect: markerRect, textContainerOrigin: NSPoint(x: 5, y: 8), buttonSize: 28)
+
+        XCTAssertEqual(frame.origin.x, 40)
+        XCTAssertEqual(frame.origin.y, 123)
+        XCTAssertEqual(frame.size, NSSize(width: 28, height: 28))
+    }
+
+    func test_collapsibleToggleGlyphOrigin_centersGlyphWithinBounds() {
+        let origin = collapsibleToggleGlyphOrigin(in: NSRect(x: 0, y: 0, width: 28, height: 28), glyphSize: NSSize(width: 12, height: 14))
+
+        XCTAssertEqual(origin.x, 9)
+        XCTAssertEqual(origin.y, 6)
+    }
+
     // MARK: - Edge Cases
     
     func test_handlesEmptyDocument() {
