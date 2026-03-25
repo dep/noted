@@ -41,7 +41,13 @@ final class MarkdownPreviewRendererTests: XCTestCase {
         let html = renderer.renderBody(from: markdown)
 
         XCTAssertTrue(html.contains("<blockquote>Quoted line</blockquote>"))
-        XCTAssertTrue(html.contains("<pre><code class=\"hljs language-swift\">let answer = 42</code></pre>"))
+        // Check for code block with syntax highlighting (spans for keywords and numbers)
+        XCTAssertTrue(html.contains("<pre><code class=\"hljs language-swift\">"))
+        XCTAssertTrue(html.contains("hljs-keyword"))
+        XCTAssertTrue(html.contains("let"))
+        XCTAssertTrue(html.contains("hljs-number"))
+        XCTAssertTrue(html.contains("42"))
+        XCTAssertTrue(html.contains("</code><!-- raw-code: let answer = 42 --></pre>"))
     }
 
     func test_renderBody_rendersCalloutBlockquoteWithClass() {

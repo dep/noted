@@ -2129,7 +2129,11 @@ class AppState: ObservableObject {
             }
 
             let jsonData = try JSONSerialization.data(withJSONObject: stateData, options: [.prettyPrinted, .sortedKeys])
-            try jsonData.write(to: stateURL)
+            
+            // Atomic write: write to temp file then rename to avoid truncated reads
+            let tempURL = stateURL.appendingPathExtension("tmp")
+            try jsonData.write(to: tempURL, options: .atomic)
+            try FileManager.default.moveItem(at: tempURL, to: stateURL)
         } catch {
             // Silently fail - this is transient runtime state
             print("Failed to write state file: \(error)")
