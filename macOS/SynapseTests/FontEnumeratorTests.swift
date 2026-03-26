@@ -2,12 +2,8 @@ import XCTest
 import AppKit
 @testable import Synapse
 
-/// Tests for FontEnumerator — the utility that provides font lists for the
-/// Synapse font picker.
-///
-/// The font picker is a critical settings surface: a broken or empty font list
-/// leaves users unable to customise the editor or code font. These tests pin the
-/// contract for all three public entry points plus the display-name helper.
+/// Tests for FontEnumerator — system font listing and filtering used by the font picker.
+/// Wrong sorting or filtering breaks monospace/body font selection in settings.
 final class FontEnumeratorTests: XCTestCase {
 
     // MARK: - allSystemFonts

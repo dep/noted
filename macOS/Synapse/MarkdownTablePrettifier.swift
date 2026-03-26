@@ -14,8 +14,12 @@ struct MarkdownTablePrettifier {
     /// within the new text. `cursorOffset` is relative to the start of the table block.
     /// `availableColumns` is the total character width of the editor (used to stretch columns to fill).
     static func prettify(tableText: String, cursorOffsetInTable: Int) -> PrettifyResult? {
-        var lines = tableText.components(separatedBy: "\n")
-        let hadTrailingNewline = tableText.hasSuffix("\n")
+        // Normalize CRLF / lone CR so trimming pipes and separator detection behave like LF-only text.
+        let normalizedTable = tableText
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        var lines = normalizedTable.components(separatedBy: "\n")
+        let hadTrailingNewline = normalizedTable.hasSuffix("\n")
         if hadTrailingNewline, let last = lines.last, last.isEmpty {
             lines.removeLast()
         }
