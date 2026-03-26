@@ -166,6 +166,34 @@ final class AppStateTabsTests: XCTestCase {
         XCTAssertEqual(sut.selectedFile, fileA)
     }
 
+    func test_switchTab_restoresSavedCursorAndScrollStatePerTab() {
+        sut.openFile(fileA)
+        sut.pendingCursorRange = NSRange(location: 12, length: 4)
+        sut.pendingScrollOffsetY = 144
+
+        sut.openFileInNewTab(fileB)
+
+        XCTAssertEqual(sut.activeTabIndex, 1)
+        XCTAssertNil(sut.pendingCursorRange)
+        XCTAssertNil(sut.pendingScrollOffsetY)
+
+        sut.pendingCursorRange = NSRange(location: 2, length: 0)
+        sut.pendingScrollOffsetY = 32
+
+        sut.switchTab(to: 0)
+
+        XCTAssertEqual(sut.pendingCursorRange, NSRange(location: 12, length: 4))
+        XCTAssertEqual(sut.pendingScrollOffsetY, 144)
+
+        sut.pendingCursorRange = NSRange(location: 7, length: 0)
+        sut.pendingScrollOffsetY = 72
+
+        sut.switchTab(to: 1)
+
+        XCTAssertEqual(sut.pendingCursorRange, NSRange(location: 2, length: 0))
+        XCTAssertEqual(sut.pendingScrollOffsetY, 32)
+    }
+
     func test_switchTab_invalidIndex_doesNothing() {
         sut.openFile(fileA)
 

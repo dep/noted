@@ -123,6 +123,12 @@ struct PaneState {
     var historyIndex: Int = -1
     var cursorRange: NSRange? = nil
     var scrollOffsetY: CGFloat? = nil
+    var tabEditorStates: [TabItem: TabEditorState] = [:]
+}
+
+struct TabEditorState {
+    var cursorRange: NSRange? = nil
+    var scrollOffsetY: CGFloat? = nil
 }
 
 class AppState: ObservableObject {
@@ -485,12 +491,48 @@ class AppState: ObservableObject {
         tabMRU.insert(item, at: 0)
     }
 
+    private func persistCurrentTabEditorState(in paneIndex: Int) {
+        guard let currentTab = activeTab,
+              currentTab.isFile,
+              paneIndex < paneStates.count else { return }
+
+        paneStates[paneIndex].tabEditorStates[currentTab] = TabEditorState(
+            cursorRange: pendingCursorRange,
+            scrollOffsetY: pendingScrollOffsetY
+        )
+        paneStates[paneIndex].cursorRange = pendingCursorRange
+        paneStates[paneIndex].scrollOffsetY = pendingScrollOffsetY
+        pendingCursorRange = nil
+        pendingScrollOffsetY = nil
+        pendingCursorTargetPaneIndex = nil
+    }
+
+    private func captureCurrentTabEditorState(in paneIndex: Int) {
+        NotificationCenter.default.post(name: .saveCursorPosition, object: nil)
+        persistCurrentTabEditorState(in: paneIndex)
+    }
+
+    private func restoreTabEditorState(for item: TabItem) {
+        guard activePaneIndex < paneStates.count else { return }
+        if let editorState = paneStates[activePaneIndex].tabEditorStates[item] {
+            pendingCursorRange = editorState.cursorRange
+            pendingScrollOffsetY = editorState.scrollOffsetY
+            pendingCursorTargetPaneIndex = activePaneIndex
+        } else {
+            pendingCursorRange = nil
+            pendingScrollOffsetY = nil
+            pendingCursorTargetPaneIndex = nil
+        }
+    }
+
     private func activateTab(at index: Int, updateRecency: Bool = true, resetCycle: Bool = true) {
         guard index >= 0 && index < tabs.count else { return }
 
         if isDirty {
             saveCurrentFile(content: fileContent)
         }
+
+        captureCurrentTabEditorState(in: activePaneIndex)
 
         activeTabIndex = index
         let tab = tabs[index]
@@ -501,6 +543,7 @@ class AppState: ObservableObject {
             fileContent = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             isDirty = false
             startWatching(url)
+            restoreTabEditorState(for: tab)
             if updateRecency {
                 recordTabRecency(for: tab)
             }
@@ -510,12 +553,18 @@ class AppState: ObservableObject {
             fileContent = ""
             isDirty = false
             stopWatching()
+            pendingCursorRange = nil
+            pendingScrollOffsetY = nil
+            pendingCursorTargetPaneIndex = nil
         case .graph:
             // Graph tab - clear file state
             selectedFile = nil
             fileContent = ""
             isDirty = false
             stopWatching()
+            pendingCursorRange = nil
+            pendingScrollOffsetY = nil
+            pendingCursorTargetPaneIndex = nil
         }
         
         // Write runtime state file
@@ -1631,6 +1680,8 @@ class AppState: ObservableObject {
             autoPushIfEnabled()
         }
 
+        captureCurrentTabEditorState(in: activePaneIndex)
+
         if inNewTab {
             // If file already open in a tab, just switch to it
             if let existingIndex = tabs.firstIndex(of: .file(url)) {
@@ -1657,6 +1708,7 @@ class AppState: ObservableObject {
         fileContent = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         isDirty = false
         startWatching(url)
+        restoreTabEditorState(for: .file(url))
 
         // Update navigation history
         if !navigatingHistory {
@@ -1682,6 +1734,8 @@ class AppState: ObservableObject {
     }
 
     func openGraphTab() {
+        captureCurrentTabEditorState(in: activePaneIndex)
+
         // If graph tab already open, switch to it
         if let existingIndex = tabs.firstIndex(of: .graph) {
             switchTab(to: existingIndex)
@@ -1693,9 +1747,14 @@ class AppState: ObservableObject {
         fileContent = ""
         isDirty = false
         stopWatching()
+        pendingCursorRange = nil
+        pendingScrollOffsetY = nil
+        pendingCursorTargetPaneIndex = nil
     }
 
     func openTagInNewTab(_ tag: String) {
+        captureCurrentTabEditorState(in: activePaneIndex)
+
         // If tag already open in a tab, just switch to it
         if let existingIndex = tabs.firstIndex(of: .tag(tag)) {
             switchTab(to: existingIndex)
@@ -1711,6 +1770,9 @@ class AppState: ObservableObject {
         fileContent = ""
         isDirty = false
         stopWatching()
+        pendingCursorRange = nil
+        pendingScrollOffsetY = nil
+        pendingCursorTargetPaneIndex = nil
 
         // Update recency
         recordTabRecency(for: .tag(tag))
@@ -1720,6 +1782,10 @@ class AppState: ObservableObject {
         guard index >= 0 && index < tabs.count else { return }
 
         let wasActive = (index == activeTabIndex)
+
+        if wasActive {
+            captureCurrentTabEditorState(in: activePaneIndex)
+        }
 
         // Auto-save if dirty
         if isDirty {
@@ -1807,6 +1873,8 @@ class AppState: ObservableObject {
 
     func closeOtherTabs() {
         guard let activeTabIndex else { return }
+
+        captureCurrentTabEditorState(in: activeTabIndex)
 
         let activeItem = tabs[activeTabIndex]
         for (index, item) in tabs.enumerated() where index != activeTabIndex {
@@ -1960,8 +2028,11 @@ class AppState: ObservableObject {
 
     // MARK: - Split Pane
 
-    private func snapshotCurrentPane(index: Int) {
+    private func snapshotCurrentPane(index: Int, includePendingEditorState: Bool = true) {
         guard index < paneStates.count else { return }
+        if includePendingEditorState {
+            persistCurrentTabEditorState(in: index)
+        }
         paneStates[index].tabs = tabs
         paneStates[index].activeTabIndex = activeTabIndex
         paneStates[index].selectedFile = selectedFile
@@ -1982,9 +2053,13 @@ class AppState: ObservableObject {
         selectedFile = pane.selectedFile
         fileContent = pane.fileContent
         isDirty = pane.isDirty
-        pendingCursorRange = pane.cursorRange
-        pendingScrollOffsetY = pane.scrollOffsetY
-        pendingCursorTargetPaneIndex = index
+        if let activeTab = activeTab {
+            restoreTabEditorState(for: activeTab)
+        } else {
+            pendingCursorRange = pane.cursorRange
+            pendingScrollOffsetY = pane.scrollOffsetY
+            pendingCursorTargetPaneIndex = index
+        }
         if let file = pane.selectedFile {
             startWatching(file)
         } else {
@@ -2001,7 +2076,8 @@ class AppState: ObservableObject {
     }
 
     private func splitPane(orientation: SplitOrientation) {
-        snapshotCurrentPane(index: 0)
+        captureCurrentTabEditorState(in: activePaneIndex)
+        snapshotCurrentPane(index: 0, includePendingEditorState: false)
         // Initialize pane 1 with same file as pane 0
         paneStates[1] = PaneState()
         if let currentFile = selectedFile {
@@ -2044,7 +2120,8 @@ class AppState: ObservableObject {
     func closePane(_ index: Int) {
         guard splitOrientation != nil else { return }
         let keepIndex = index == 0 ? 1 : 0
-        snapshotCurrentPane(index: activePaneIndex)
+        captureCurrentTabEditorState(in: activePaneIndex)
+        snapshotCurrentPane(index: activePaneIndex, includePendingEditorState: false)
 
         // Restore the pane we're keeping as pane 0
         let keepState = paneStates[keepIndex]
@@ -2077,7 +2154,8 @@ class AppState: ObservableObject {
     func openFileInSplit(_ url: URL) {
         if splitOrientation == nil {
             // No current split: create vertical split and open in pane 1
-            snapshotCurrentPane(index: 0)
+            captureCurrentTabEditorState(in: 0)
+            snapshotCurrentPane(index: 0, includePendingEditorState: false)
             paneStates[1] = PaneState()
             paneStates[1].tabs = [.file(url)]
             paneStates[1].activeTabIndex = 0
@@ -2088,7 +2166,8 @@ class AppState: ObservableObject {
         } else {
             // Already split: open in the other pane
             let targetPane = activePaneIndex == 0 ? 1 : 0
-            snapshotCurrentPane(index: activePaneIndex)
+            captureCurrentTabEditorState(in: activePaneIndex)
+            snapshotCurrentPane(index: activePaneIndex, includePendingEditorState: false)
             paneStates[targetPane].tabs = [.file(url)]
             paneStates[targetPane].activeTabIndex = 0
             paneStates[targetPane].selectedFile = url
