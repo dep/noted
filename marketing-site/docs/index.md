@@ -83,6 +83,12 @@ Drag and drop files directly to sidebar panes to move or organize your notes.
 ### Gist Publishing
 Easily publish specific notes to GitHub Gists using your Personal Access Token (PAT).
 
+### .gitignore Support
+Synapse can automatically hide files and folders that your project's `.gitignore` rules mark as ignored — so `node_modules/`, `build/`, and other generated directories stay out of your file tree without any extra configuration.
+- Enable or disable this in **Settings → File Browser → Respect .gitignore** (on by default).
+- Nested `.gitignore` files and global git ignores are honoured automatically.
+- Non-git vaults are unaffected — scanning works normally.
+
 ### Vault-Specific Settings
 Settings automatically sync with your vault. When you open a vault, Synapse stores its settings in `.synapse/settings.yml` at the vault root:
 - **Portable Settings** — Settings travel with the vault, perfect for syncing via Git or cloud storage

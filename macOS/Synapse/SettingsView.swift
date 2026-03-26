@@ -323,6 +323,13 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                     }
 
+                    Toggle(isOn: $settings.respectGitignore) {
+                        Text("Respect .gitignore")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    .toggleStyle(.checkbox)
+
                     Text("Filter which files appear in the sidebar. Use commas to list multiple patterns (e.g. *.md, *.txt) or * for all files. You can also hide matching files or folders with patterns like .git, .synapse, or .images. Changes apply immediately.")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
