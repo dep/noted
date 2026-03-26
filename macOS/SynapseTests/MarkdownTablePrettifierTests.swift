@@ -33,6 +33,18 @@ final class MarkdownTablePrettifierTests: XCTestCase {
         XCTAssertTrue(result.formatted.contains("| x  | y  |"))
     }
 
+    /// GitHub Actions checks out with LF, but editors on Windows use CRLF; prettify must accept both.
+    func test_prettify_normalizesCRLF() {
+        let text = "|a|bb|\r\n|---|---|\r\n|x|y|\r\n"
+        guard let result = MarkdownTablePrettifier.prettify(tableText: text, cursorOffsetInTable: 0) else {
+            return XCTFail("Expected prettify to succeed with CRLF line endings")
+        }
+        XCTAssertTrue(result.formatted.hasSuffix("\n"))
+        XCTAssertTrue(result.formatted.contains("| a  | bb |"))
+        XCTAssertTrue(result.formatted.contains("| --- | --- |"))
+        XCTAssertTrue(result.formatted.contains("| x  | y  |"))
+    }
+
     func test_prettify_rightAndCenterAlignmentInSeparator() {
         let text = """
         |L|C|R|
