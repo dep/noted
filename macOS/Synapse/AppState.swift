@@ -139,6 +139,19 @@ class AppState: ObservableObject {
         case wikiLink
     }
 
+    // MARK: - Sub-Objects (4A split)
+
+    /// Owns vault-level data: file list, content cache, tags, graph.
+    let vaultIndex = VaultIndex()
+    /// Owns per-editor data: selected file, content, dirty state, cursor/scroll signals.
+    let editorState = EditorState()
+    /// Owns navigation data: tabs, history, split-pane layout.
+    let navigationState = NavigationState()
+
+    /// Cancellables that forward sub-object changes to AppState.objectWillChange
+    /// so that existing views using @EnvironmentObject var appState continue to re-render.
+    private var subObjectCancellables: [AnyCancellable] = []
+
     @Published var rootURL: URL?
     @Published var selectedFile: URL?
     /// Set when a pinned folder is tapped — signals FileTreeView to collapse others and focus this folder.
@@ -150,7 +163,7 @@ class AppState: ObservableObject {
     @Published var recentFiles: [URL] = []
     /// True while the background indexing pass (content parsing) is in progress.
     @Published var isIndexing: Bool = false
-    
+
     // Signal that fires when file content changes (for UI refresh)
     @Published var lastContentChange: UUID = UUID()
 
@@ -291,12 +304,45 @@ class AppState: ObservableObject {
         self.settings = resolvedSettings
         self.isEditMode = resolvedSettings.hideMarkdownWhileEditing ? true : resolvedSettings.defaultEditMode
         bindSettingsObservers()
+        bindSubObjectObservers()
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleAppTermination),
             name: NSApplication.willTerminateNotification,
             object: nil
         )
+    }
+
+    /// Mirrors AppState @Published values into the focused sub-objects so that views which
+    /// subscribe directly to VaultIndex, EditorState, or NavigationState receive targeted
+    /// change notifications without observing the monolithic AppState.
+    private func bindSubObjectObservers() {
+        subObjectCancellables = [
+            // VaultIndex mirrors
+            $allFiles.sink { [weak self] v in self?.vaultIndex.allFiles = v },
+            $allProjectFiles.sink { [weak self] v in self?.vaultIndex.allProjectFiles = v },
+            $recentFiles.sink { [weak self] v in self?.vaultIndex.recentFiles = v },
+            $isIndexing.sink { [weak self] v in self?.vaultIndex.isIndexing = v },
+            $lastContentChange.sink { [weak self] v in self?.vaultIndex.lastContentChange = v },
+
+            // EditorState mirrors
+            $selectedFile.sink { [weak self] v in self?.editorState.selectedFile = v },
+            $fileContent.sink { [weak self] v in self?.editorState.fileContent = v },
+            $isDirty.sink { [weak self] v in self?.editorState.isDirty = v },
+            $pendingCursorPosition.sink { [weak self] v in self?.editorState.pendingCursorPosition = v },
+            $pendingCursorRange.sink { [weak self] v in self?.editorState.pendingCursorRange = v },
+            $pendingCursorTargetPaneIndex.sink { [weak self] v in self?.editorState.pendingCursorTargetPaneIndex = v },
+            $pendingScrollOffsetY.sink { [weak self] v in self?.editorState.pendingScrollOffsetY = v },
+            $pendingSearchQuery.sink { [weak self] v in self?.editorState.pendingSearchQuery = v },
+
+            // NavigationState mirrors
+            $tabs.sink { [weak self] v in self?.navigationState.tabs = v },
+            $activeTabIndex.sink { [weak self] v in self?.navigationState.activeTabIndex = v },
+            $canGoBack.sink { [weak self] v in self?.navigationState.canGoBack = v },
+            $canGoForward.sink { [weak self] v in self?.navigationState.canGoForward = v },
+            $splitOrientation.sink { [weak self] v in self?.navigationState.splitOrientation = v },
+            $activePaneIndex.sink { [weak self] v in self?.navigationState.activePaneIndex = v },
+        ]
     }
 
     private func bindSettingsObservers() {
@@ -901,6 +947,9 @@ class AppState: ObservableObject {
             self.cachedTagCounts = newTagCounts
             self.cachedBacklinks = newBacklinks
             self.isIndexing = false
+            // Fire targeted notifications after full rebuild
+            self.vaultIndex.notifyTagsDidChange()
+            self.vaultIndex.notifyGraphDidChange()
         }
     }
 
@@ -910,6 +959,9 @@ class AppState: ObservableObject {
     /// - Unchanged files are skipped.
     /// Exposed internal for testing.
     func updateCacheIncrementally(for urls: [URL]) {
+        var tagsChanged = false
+        var linksChanged = false
+
         for url in urls {
             let fm = FileManager.default
             if !fm.fileExists(atPath: url.path) {
@@ -919,10 +971,12 @@ class AppState: ObservableObject {
                         cachedTagCounts[tag, default: 1] -= 1
                         if cachedTagCounts[tag, default: 0] <= 0 { cachedTagCounts.removeValue(forKey: tag) }
                     }
+                    if !old.tags.isEmpty { tagsChanged = true }
                     for link in old.wikiLinks {
                         cachedBacklinks[link]?.remove(url)
                         if cachedBacklinks[link]?.isEmpty == true { cachedBacklinks.removeValue(forKey: link) }
                     }
+                    if !old.wikiLinks.isEmpty { linksChanged = true }
                     noteContentCache.removeValue(forKey: url)
                 }
                 continue
@@ -949,6 +1003,7 @@ class AppState: ObservableObject {
             for added in newTags.subtracting(oldTags) {
                 cachedTagCounts[added, default: 0] += 1
             }
+            if oldTags != newTags { tagsChanged = true }
 
             // Diff backlinks
             let oldLinks = Set(old?.wikiLinks ?? [])
@@ -960,9 +1015,14 @@ class AppState: ObservableObject {
             for added in newLinks.subtracting(oldLinks) {
                 cachedBacklinks[added, default: []].insert(url)
             }
+            if oldLinks != newLinks { linksChanged = true }
 
             noteContentCache[url] = newEntry
         }
+
+        // Fire targeted notifications only when the relevant data actually changed
+        if tagsChanged { vaultIndex.notifyTagsDidChange() }
+        if linksChanged { vaultIndex.notifyGraphDidChange() }
     }
 
     // MARK: - Tags
@@ -1375,6 +1435,9 @@ class AppState: ObservableObject {
         cachedTagCounts = [:]
         cachedBacklinks = [:]
         isIndexing = false
+        vaultIndex.notifyFilesDidChange()
+        vaultIndex.notifyTagsDidChange()
+        vaultIndex.notifyGraphDidChange()
         commandPaletteMode = .files
         pendingTemplateRename = nil
 
@@ -1546,6 +1609,7 @@ class AppState: ObservableObject {
         guard let root = rootURL else {
             allFiles = []
             allProjectFiles = []
+            vaultIndex.notifyFilesDidChange()
             return
         }
 
@@ -1633,6 +1697,7 @@ class AppState: ObservableObject {
                 guard let self, self.scanGeneration == generation else { return }
                 self.allProjectFiles = project
                 self.allFiles = visible
+                self.vaultIndex.notifyFilesDidChange()
                 // In tests: run the indexing pass synchronously on the same thread so
                 // cache-dependent assertions work without async expectations.
                 self.indexGeneration += 1
@@ -1654,6 +1719,8 @@ class AppState: ObservableObject {
                     self.cachedTagCounts = tags
                     self.cachedBacklinks = backlinks
                     self.isIndexing = false
+                    self.vaultIndex.notifyTagsDidChange()
+                    self.vaultIndex.notifyGraphDidChange()
                     return cache
                 }()
             }
@@ -1664,6 +1731,7 @@ class AppState: ObservableObject {
                         guard let self, self.scanGeneration == generation else { return }
                         self.allProjectFiles = project
                         self.allFiles = visible
+                        self.vaultIndex.notifyFilesDidChange()
                         // Kick off background indexing pass; file tree is usable immediately.
                         self.indexGeneration += 1
                         let idxGen = self.indexGeneration
