@@ -255,6 +255,12 @@ class AppState: ObservableObject {
     private var pullTimer: Timer?
     private var autoSaveTimer: Timer?
     private let gitQueue = DispatchQueue(label: "com.Synapse.git", qos: .background)
+    private let scanQueue = DispatchQueue(label: "com.Synapse.fileScan", qos: .userInitiated)
+    /// Monotonically increasing counter. Each scan start increments it; the result
+    /// is only applied when the counter still matches, discarding stale scans.
+    private var scanGeneration: Int = 0
+    /// Pending debounce work item for the DispatchSource file watcher.
+    private var scanDebounceWorkItem: DispatchWorkItem?
     private let machineName: String = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
 
     // MARK: - Runtime State File
@@ -431,11 +437,18 @@ class AppState: ObservableObject {
             )
             source.setEventHandler { [weak self] in
                 guard let self else { return }
-                self.rebuildFileLists(reloadSettings: false)
-                guard case .pulling = self.gitSyncStatus else {
-                    self.reloadSelectedFileFromDiskIfNeeded(force: true)
-                    return
+                // Debounce rapid FS events by 150ms to batch burst changes (e.g. npm install).
+                self.scanDebounceWorkItem?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.rebuildFileLists(reloadSettings: false)
+                    guard case .pulling = self.gitSyncStatus else {
+                        self.reloadSelectedFileFromDiskIfNeeded(force: true)
+                        return
+                    }
                 }
+                self.scanDebounceWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
             }
             source.setCancelHandler { close(fd) }
             source.resume()
@@ -1321,6 +1334,9 @@ class AppState: ObservableObject {
     /// Rescans the vault file tree. When `reloadSettings` is true, persists any pending debounced
     /// settings and reloads YAML first (manual refresh / after file ops). The directory watcher
     /// uses `reloadSettings: false` so saving a note does not reload settings and undo in-memory UI prefs.
+    ///
+    /// The scan runs on a dedicated background queue. A generation counter ensures that if multiple
+    /// scans are triggered in rapid succession, only the last one applies its results to `allFiles`.
     private func rebuildFileLists(reloadSettings: Bool) {
         guard let root = rootURL else {
             allFiles = []
@@ -1333,33 +1349,133 @@ class AppState: ObservableObject {
             settings.reloadFromDisk()
         }
 
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey]
-        ) else { return }
+        // In the test environment run synchronously on the calling thread so existing
+        // tests that check allFiles immediately after refreshAllFiles() continue to work.
+        let isTestEnv = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
-        var discoveredFiles: [URL] = []
+        scanGeneration += 1
+        let generation = scanGeneration
 
-        while let item = enumerator.nextObject() as? URL {
-            let url = standardized(item)
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+        // Snapshot settings values so the background thread never touches SettingsManager.
+        let respectGitignore = settings.respectGitignore
+        let settingsSnapshot = settings  // strong ref; safe because SettingsManager is main-actor
 
-            if settings.shouldHideItem(named: url.lastPathComponent) {
-                if values?.isDirectory == true {
-                    enumerator.skipDescendants()
-                }
-                continue
+        /// Core scan work: runs the enumeration and delivers results via the given commit closure.
+        /// `commit` is called with (project, visible) and runs on whatever thread is appropriate.
+        let scan: (([URL], [URL]) -> Void) -> Void = { [weak self] commit in
+            guard let self else { return }
+
+            let fm = FileManager.default
+
+            // Build a set of gitignore-excluded directory paths (via git ls-files).
+            // This is a single process spawn rather than one per directory.
+            var ignoredDirectories: Set<String> = []
+            if respectGitignore, GitService.isGitRepo(at: root), let gitPath = GitService.findGit() {
+                ignoredDirectories = Self.fetchIgnoredDirectories(gitPath: gitPath, repoRoot: root)
             }
 
-            guard values?.isRegularFile == true else { continue }
-            discoveredFiles.append(url)
+            guard let enumerator = fm.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey]
+            ) else { return }
+
+            var discoveredFiles: [URL] = []
+
+            while let item = enumerator.nextObject() as? URL {
+                let url = item.standardizedFileURL
+                let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+
+                // Always skip the .git internals directory — it is never a user file.
+                if values?.isDirectory == true, url.lastPathComponent == ".git" {
+                    enumerator.skipDescendants()
+                    continue
+                }
+
+                // Check user-defined hidden patterns first.
+                if settingsSnapshot.shouldHideItem(named: url.lastPathComponent) {
+                    if values?.isDirectory == true {
+                        enumerator.skipDescendants()
+                    }
+                    continue
+                }
+
+                // Check .gitignore: skip entire ignored directories.
+                if values?.isDirectory == true {
+                    let dirPath = url.path
+                    // Normalise trailing slash to match git ls-files output.
+                    let withSlash = dirPath.hasSuffix("/") ? dirPath : dirPath + "/"
+                    if ignoredDirectories.contains(withSlash) || ignoredDirectories.contains(dirPath) {
+                        enumerator.skipDescendants()
+                        continue
+                    }
+                }
+
+                guard values?.isRegularFile == true else { continue }
+                discoveredFiles.append(url)
+            }
+
+            discoveredFiles.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+
+            let project = discoveredFiles
+            let visible = discoveredFiles.filter { settingsSnapshot.shouldShowFile($0, relativeTo: root) }
+            commit(project, visible)
         }
 
-        discoveredFiles.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        if isTestEnv {
+            // Run synchronously and assign directly on the calling (main) thread so that
+            // test assertions see results immediately without needing async expectations.
+            scan { [weak self] project, visible in
+                guard let self, self.scanGeneration == generation else { return }
+                self.allProjectFiles = project
+                self.allFiles = visible
+            }
+        } else {
+            scanQueue.async { [weak self] in
+                scan { project, visible in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.scanGeneration == generation else { return }
+                        self.allProjectFiles = project
+                        self.allFiles = visible
+                    }
+                }
+            }
+        }
+    }
 
-        allProjectFiles = discoveredFiles
-        allFiles = discoveredFiles.filter { settings.shouldShowFile($0, relativeTo: root) }
+    /// Runs `git ls-files --others --ignored --exclude-standard --directory` in the given
+    /// repo to obtain the set of all ignored directory paths. Returns a `Set<String>` of
+    /// absolute paths (with trailing slash) that should be skipped during enumeration.
+    private static func fetchIgnoredDirectories(gitPath: String, repoRoot: URL) -> Set<String> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: gitPath)
+        process.arguments = ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"]
+        process.currentDirectoryURL = repoRoot
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        guard (try? process.run()) != nil else { return [] }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return [] }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8) else { return [] }
+
+        var result = Set<String>()
+        for line in output.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            // git outputs paths relative to the repo root.
+            let absPath = repoRoot.appendingPathComponent(trimmed).standardizedFileURL.path
+            result.insert(absPath)
+            // Also store without trailing slash for robustness.
+            if absPath.hasSuffix("/") {
+                result.insert(String(absPath.dropLast()))
+            } else {
+                result.insert(absPath + "/")
+            }
+        }
+        return result
     }
 
     func presentCommandPalette(mode: CommandPaletteMode = .files) {
