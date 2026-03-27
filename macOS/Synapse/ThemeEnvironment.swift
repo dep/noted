@@ -59,10 +59,26 @@ final class ThemeEnvironment: ObservableObject {
 
     // NSColor variants for AppKit/editor use
     var nsEditorBackground: NSColor {
-        theme.nsColor(for: "background.secondary") ?? SynapseTheme.editorBackground
+        theme.nsColor(for: "background.primary") ?? NSColor(white: 0.07, alpha: 1)
     }
     var nsEditorForeground: NSColor {
-        theme.nsColor(for: "text.primary") ?? SynapseTheme.editorForeground
+        theme.nsColor(for: "text.primary") ?? NSColor(white: 0.92, alpha: 1)
+    }
+    var nsEditorCodeBackground: NSColor {
+        theme.nsColor(for: "background.elevated") ?? NSColor(white: 0.10, alpha: 1)
+    }
+
+    /// Whether the active theme is a light theme (background luminance > 0.5).
+    var isLightTheme: Bool {
+        guard let bg = theme.nsColor(for: "background.primary"),
+              let rgb = bg.usingColorSpace(.deviceRGB) else { return false }
+        // Perceived luminance
+        return (rgb.redComponent * 0.299 + rgb.greenComponent * 0.587 + rgb.blueComponent * 0.114) > 0.5
+    }
+
+    /// The NSAppearance that matches the active theme.
+    var nsAppearance: NSAppearance {
+        NSAppearance(named: isLightTheme ? .aqua : .darkAqua) ?? .current
     }
     var nsTextPrimary: NSColor {
         theme.nsColor(for: "text.primary") ?? SynapseTheme.nsTextPrimary

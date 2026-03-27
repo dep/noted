@@ -100,24 +100,43 @@ func refreshAllEditorsForThemeChange() {
     for window in NSApp.windows {
         guard let contentView = window.contentView else { continue }
 
+        // Determine the NSAppearance that matches the active theme so AppKit
+        // stops overriding our explicit backgroundColor assignments.
+        let themeAppearance = ThemeEnvironment.shared?.nsAppearance
+            ?? NSAppearance(named: .darkAqua)
+
         // Re-theme every LinkAwareTextView (raw editor + read-only panes)
         for textView in collectLinkAwareTextViews(in: contentView) {
-            textView.backgroundColor = SynapseTheme.editorBackground
-            textView.textColor = SynapseTheme.editorForeground
+            let bg = SynapseTheme.editorBackground
+            let fg = SynapseTheme.editorForeground
+
+            // Override AppKit's appearance so dark/light mode doesn't fight our colors
+            textView.appearance = themeAppearance
+
+            textView.backgroundColor = bg
+            textView.textColor = fg
             textView.insertionPointColor = NSColor(SynapseTheme.accent)
             textView.selectedTextAttributes = [
                 .backgroundColor: SynapseTheme.editorSelection,
-                .foregroundColor: SynapseTheme.editorForeground,
+                .foregroundColor: fg,
             ]
+
             if let scroll = textView.enclosingScrollView {
-                scroll.backgroundColor = SynapseTheme.editorBackground
+                scroll.appearance = themeAppearance
+                scroll.backgroundColor = bg
+                scroll.contentView.backgroundColor = bg
+                scroll.drawsBackground = true
+                // display() forces a synchronous repaint, not deferred
+                scroll.display()
             }
+            textView.display()
+
             // Re-style the text so markdown token colors update immediately
             preserveScrollOffset(for: textView) {
                 if let settings = textView.settings {
                     textView.typingAttributes = [
                         .font: MarkdownTheme.bodyFont(for: settings),
-                        .foregroundColor: SynapseTheme.editorForeground,
+                        .foregroundColor: fg,
                     ]
                 }
                 let shouldApplyPreview = textView.lastAppliedEditorDisplayMode == .preview || !textView.isEditable
@@ -775,6 +794,12 @@ struct RawEditor: NSViewRepresentable {
         scroll.borderType = .noBorder
         scroll.drawsBackground = true
         scroll.backgroundColor = SynapseTheme.editorBackground
+        // Match the scroll view's appearance to the active theme so AppKit
+        // doesn't re-override backgroundColor during layout.
+        if let appearance = ThemeEnvironment.shared?.nsAppearance {
+            scroll.appearance = appearance
+            textView.appearance = appearance
+        }
         return scroll
     }
 
@@ -4066,10 +4091,13 @@ struct EmbeddedNotesPanel: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
-        scrollView.backgroundColor = .clear
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = SynapseTheme.editorBackground
 
         let documentView = FlippedNSView()
         documentView.autoresizingMask = [.width]
+        documentView.wantsLayer = true
+        documentView.layer?.backgroundColor = SynapseTheme.editorBackground.cgColor
         scrollView.documentView = documentView
 
         return scrollView
@@ -4077,6 +4105,12 @@ struct EmbeddedNotesPanel: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let documentView = scrollView.documentView else { return }
+
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = SynapseTheme.editorBackground
+        scrollView.contentView.backgroundColor = SynapseTheme.editorBackground
+        scrollView.documentView?.wantsLayer = true
+        scrollView.documentView?.layer?.backgroundColor = SynapseTheme.editorBackground.cgColor
 
         let width: CGFloat = 304 // 320 - 16 padding
         let spacing: CGFloat = 12

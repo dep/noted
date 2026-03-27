@@ -46,7 +46,7 @@ enum SynapseTheme {
     static var editorBackground:     NSColor { ThemeEnvironment.shared?.nsEditorBackground     ?? NSColor(white: 0.07, alpha: 1) }
     static var editorForeground:     NSColor { ThemeEnvironment.shared?.nsEditorForeground     ?? NSColor(white: 0.92, alpha: 1) }
     static var editorMuted:          NSColor { NSColor(white: 0.60, alpha: 1) }   // no per-theme token
-    static var editorCodeBackground: NSColor { NSColor(white: 0.10, alpha: 1) }   // no per-theme token
+    static var editorCodeBackground: NSColor { ThemeEnvironment.shared?.nsEditorCodeBackground ?? NSColor(white: 0.10, alpha: 1) }
     static var editorSelection:      NSColor { NSColor(calibratedRed: 0.20, green: 0.44, blue: 0.76, alpha: 0.45) }
     static var editorLink:           NSColor { ThemeEnvironment.shared.map { NSColor($0.accent) } ?? NSColor(calibratedRed: 0.47, green: 0.77, blue: 1.00, alpha: 1) }
     static var editorUnresolvedLink: NSColor { NSColor(calibratedRed: 0.85, green: 0.35, blue: 0.50, alpha: 1) }

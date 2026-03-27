@@ -119,19 +119,21 @@ struct SynapseApp: App {
         WindowGroup {
             if appState.rootURL == nil {
                 FolderPickerView()
+                    .id(themeEnv.theme.id)
                     .environmentObject(appState)
                     .environmentObject(appState.vaultIndex)
                     .environmentObject(appState.editorState)
                     .environmentObject(appState.navigationState)
                     .environmentObject(themeEnv)
                     .tint(SynapseTheme.accent)
-                    .preferredColorScheme(.dark)
+                    .preferredColorScheme(themeEnv.isLightTheme ? .light : .dark)
                     .frame(minWidth: 560, minHeight: 420)
                     .onAppear {
                         themeEnv.observe(appState.settings)
                     }
             } else {
                 ContentView()
+                    .id(themeEnv.theme.id)
                     .environmentObject(appState)
                     .environmentObject(appState.vaultIndex)
                     .environmentObject(appState.editorState)
@@ -139,7 +141,7 @@ struct SynapseApp: App {
                     .environmentObject(autoUpdater)
                     .environmentObject(themeEnv)
                     .tint(SynapseTheme.accent)
-                    .preferredColorScheme(.dark)
+                    .preferredColorScheme(themeEnv.isLightTheme ? .light : .dark)
                     .frame(minWidth: 900, minHeight: 600)
                     .onAppear {
                         autoUpdater.checkForUpdatesOnLaunch()
@@ -230,12 +232,13 @@ struct SynapseApp: App {
 
         Settings {
             SettingsView(settings: appState.settings)
+                .id(themeEnv.theme.id)
                 .environmentObject(appState)
                 .environmentObject(appState.vaultIndex)
                 .environmentObject(appState.editorState)
                 .environmentObject(appState.navigationState)
                 .environmentObject(themeEnv)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(themeEnv.isLightTheme ? .light : .dark)
                 .frame(minWidth: 920, minHeight: 760)
         }
     }
