@@ -814,7 +814,7 @@ struct SettingsView: View {
         guard !settings.activeTheme.isBuiltIn else { return }
         let name = settings.activeThemeName
         settings.customThemes.removeAll { $0.name == name }
-        settings.activeThemeName = "Synapse Dark"
+        settings.activeThemeName = "Synapse (Dark)"
     }
 
     // MARK: - Launch Note Picker
@@ -974,7 +974,7 @@ struct ThemePicker: View {
             }
         } label: {
             HStack {
-                Text(activeThemeName.isEmpty ? "Synapse Dark" : activeThemeName)
+                Text(activeThemeName.isEmpty ? "Synapse (Dark)" : activeThemeName)
                     .font(.system(.body, design: .default))
                     .foregroundStyle(.primary)
                 Spacer()

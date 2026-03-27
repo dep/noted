@@ -41,7 +41,9 @@ struct AppTheme: Codable, Equatable, Identifiable {
 extension AppTheme {
 
     static let builtInThemeNames: Set<String> = [
-        "Synapse Dark", "Synapse Light", "Solarized", "Dracula"
+        "Synapse (Dark)", "Synapse (Light)", "Solarized (Dark)", "Dracula (Dark)",
+        "GitHub (Dark)", "Minimalist (Dark)", "Cyberpunk (Dark)", "Rainbow (Light)", "Rainbow (Dark)",
+        "Protanopia (Dark)", "Deuteranopia (Dark)"
     ]
 
     // Canonical ordered list — first entry is the default.
@@ -50,11 +52,18 @@ extension AppTheme {
         .synapseLight,
         .solarized,
         .dracula,
+        .githubDark,
+        .minimalistDark,
+        .cyberpunk,
+        .rainbow,
+        .rainbowDark,
+        .protanopiaDark,
+        .deuteranopiaDark,
     ]
 
-    // MARK: Synapse Dark (current/default)
+    // MARK: Synapse (Dark) (current/default)
     static let synapseDark = AppTheme(
-        name: "Synapse Dark",
+        name: "Synapse (Dark)",
         colors: [
             "background.primary":   "#0D0D0D",
             "background.secondary": "#121212",
@@ -72,9 +81,9 @@ extension AppTheme {
         ]
     )
 
-    // MARK: Synapse Light
+    // MARK: Synapse (Light)
     static let synapseLight = AppTheme(
-        name: "Synapse Light",
+        name: "Synapse (Light)",
         colors: [
             "background.primary":   "#F5F5F5",
             "background.secondary": "#EBEBEB",
@@ -92,9 +101,9 @@ extension AppTheme {
         ]
     )
 
-    // MARK: Solarized
+    // MARK: Solarized (Dark)
     static let solarized = AppTheme(
-        name: "Solarized",
+        name: "Solarized (Dark)",
         colors: [
             "background.primary":   "#002B36",
             "background.secondary": "#073642",
@@ -112,9 +121,9 @@ extension AppTheme {
         ]
     )
 
-    // MARK: Dracula
+    // MARK: Dracula (Dark)
     static let dracula = AppTheme(
-        name: "Dracula",
+        name: "Dracula (Dark)",
         colors: [
             "background.primary":   "#282A36",
             "background.secondary": "#21222C",
@@ -129,6 +138,146 @@ extension AppTheme {
             "row":                  "#2D2F40",
             "success":              "#50FA7B",
             "error":                "#FF5555",
+        ]
+    )
+
+    // MARK: GitHub (Dark)
+    static let githubDark = AppTheme(
+        name: "GitHub (Dark)",
+        colors: [
+            "background.primary":   "#0D1117",
+            "background.secondary": "#161B22",
+            "background.elevated":  "#21262D",
+            "text.primary":         "#E6EDF3",
+            "text.secondary":       "#9DA7B3",
+            "text.muted":           "#7D8590",
+            "accent":               "#2F81F7",
+            "accent.soft":          "#1F6FEB",
+            "border":               "#30363D",
+            "divider":              "#21262D",
+            "row":                  "#161B22",
+            "success":              "#3FB950",
+            "error":                "#F85149",
+        ]
+    )
+
+    // MARK: Minimalist (Dark)
+    static let minimalistDark = AppTheme(
+        name: "Minimalist (Dark)",
+        colors: [
+            "background.primary":   "#111111",
+            "background.secondary": "#171717",
+            "background.elevated":  "#1E1E1E",
+            "text.primary":         "#F2F2F2",
+            "text.secondary":       "#C7C7C7",
+            "text.muted":           "#8E8E8E",
+            "accent":               "#5E5E5E",
+            "accent.soft":          "#3F3F3F",
+            "border":               "#2A2A2A",
+            "divider":              "#202020",
+            "row":                  "#151515",
+            "success":              "#9AD68A",
+            "error":                "#E57373",
+        ]
+    )
+
+    // MARK: Cyberpunk (Dark)
+    static let cyberpunk = AppTheme(
+        name: "Cyberpunk (Dark)",
+        colors: [
+            "background.primary":   "#0B0A16",
+            "background.secondary": "#121028",
+            "background.elevated":  "#19163A",
+            "text.primary":         "#F7F36B",
+            "text.secondary":       "#F3A8FF",
+            "text.muted":           "#8D88C7",
+            "accent":               "#00F5D4",
+            "accent.soft":          "#00C2A8",
+            "border":               "#2A245E",
+            "divider":              "#1E1A45",
+            "row":                  "#14112E",
+            "success":              "#72F1B8",
+            "error":                "#FF4D9A",
+        ]
+    )
+
+    // MARK: Rainbow (Light)
+    static let rainbow = AppTheme(
+        name: "Rainbow (Light)",
+        colors: [
+            "background.primary":   "#FFF7FB",
+            "background.secondary": "#F8EEFF",
+            "background.elevated":  "#FFFFFF",
+            "text.primary":         "#2B1F3B",
+            "text.secondary":       "#59457A",
+            "text.muted":           "#8C76A8",
+            "accent":               "#FF5FA2",
+            "accent.soft":          "#7C5CFF",
+            "border":               "#E5D7F4",
+            "divider":              "#EEDFF8",
+            "row":                  "#FDF1FF",
+            "success":              "#22B573",
+            "error":                "#FF5A6B",
+        ]
+    )
+
+    // MARK: Rainbow (Dark)
+    static let rainbowDark = AppTheme(
+        name: "Rainbow (Dark)",
+        colors: [
+            "background.primary":   "#151226",
+            "background.secondary": "#1B1733",
+            "background.elevated":  "#251E45",
+            "text.primary":         "#F7F1FF",
+            "text.secondary":       "#D8C6FF",
+            "text.muted":           "#9F8FC9",
+            "accent":               "#FF5FA2",
+            "accent.soft":          "#7C5CFF",
+            "border":               "#362E63",
+            "divider":              "#2B2350",
+            "row":                  "#1F1A3C",
+            "success":              "#41D98B",
+            "error":                "#FF6B7A",
+        ]
+    )
+
+    // MARK: Protanopia (Dark)
+    static let protanopiaDark = AppTheme(
+        name: "Protanopia (Dark)",
+        colors: [
+            "background.primary":   "#121820",
+            "background.secondary": "#18222D",
+            "background.elevated":  "#223040",
+            "text.primary":         "#ECF3F9",
+            "text.secondary":       "#BDD0E1",
+            "text.muted":           "#89A0B6",
+            "accent":               "#5AA9FF",
+            "accent.soft":          "#3F82CC",
+            "border":               "#2B3D50",
+            "divider":              "#213243",
+            "row":                  "#17222D",
+            "success":              "#7FDBFF",
+            "error":                "#FFB86B",
+        ]
+    )
+
+    // MARK: Deuteranopia (Dark)
+    static let deuteranopiaDark = AppTheme(
+        name: "Deuteranopia (Dark)",
+        colors: [
+            "background.primary":   "#171524",
+            "background.secondary": "#1E1B30",
+            "background.elevated":  "#2A2542",
+            "text.primary":         "#F4F2FF",
+            "text.secondary":       "#D3CCF0",
+            "text.muted":           "#9E97C2",
+            "accent":               "#2F6E9F",
+            "accent.soft":          "#234F73",
+            "border":               "#38315A",
+            "divider":              "#2C2647",
+            "row":                  "#211D35",
+            "success":              "#FFD166",
+            "error":                "#FF8FAB",
         ]
     )
 }

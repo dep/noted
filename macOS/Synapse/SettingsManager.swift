@@ -312,7 +312,7 @@ class SettingsManager: ObservableObject {
 
     // MARK: - Computed theme properties
 
-    /// The resolved active theme.  Falls back to Synapse Dark if the name is unknown.
+    /// The resolved active theme. Falls back to Synapse (Dark) if the name is unknown.
     var activeTheme: AppTheme {
         allThemes.first { $0.name == activeThemeName } ?? .synapseDark
     }
@@ -717,7 +717,7 @@ class SettingsManager: ObservableObject {
         self.editorLineHeight = 1.6
         self.vaultPaths = []
         self.respectGitignore = true
-        self.activeThemeName = "Synapse Dark"
+        self.activeThemeName = "Synapse (Dark)"
         self.customThemes = []
 
         applyLegacyConfig(Self.loadConfig(from: configPath))
@@ -773,7 +773,7 @@ class SettingsManager: ObservableObject {
         self.editorLineHeight = 1.6
         self.vaultPaths = []
         self.respectGitignore = true
-        self.activeThemeName = "Synapse Dark"
+        self.activeThemeName = "Synapse (Dark)"
         self.customThemes = []
 
         if let vaultRoot = vaultRoot {
@@ -904,7 +904,7 @@ class SettingsManager: ObservableObject {
             editorFontSize = vaultConfig.editorFontSize ?? 15
             editorLineHeight = vaultConfig.editorLineHeight ?? 1.6
             respectGitignore = vaultConfig.respectGitignore ?? true
-            activeThemeName = vaultConfig.activeThemeName ?? "Synapse Dark"
+            activeThemeName = vaultConfig.activeThemeName ?? "Synapse (Dark)"
             customThemes = vaultConfig.customThemes ?? []
             return
         }
@@ -929,7 +929,7 @@ class SettingsManager: ObservableObject {
         editorFontSize = 15
         editorLineHeight = 1.6
         respectGitignore = true
-        activeThemeName = "Synapse Dark"
+        activeThemeName = "Synapse (Dark)"
         customThemes = []
     }
 
@@ -1310,7 +1310,7 @@ class SettingsManager: ObservableObject {
                 editorFontSize: editorFontSize == 15 ? nil : editorFontSize,
                 editorLineHeight: editorLineHeight == 1.6 ? nil : editorLineHeight,
                 respectGitignore: respectGitignore ? nil : false,  // omit when true (default)
-                activeThemeName: activeThemeName == "Synapse Dark" ? nil : activeThemeName,
+                activeThemeName: activeThemeName == "Synapse (Dark)" ? nil : activeThemeName,
                 customThemes: customThemes.isEmpty ? nil : customThemes
             )
             let notedDir = vaultRootURL.appendingPathComponent(".synapse")

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum SynapseTheme {
-    // MARK: - Fallback / default values (Synapse Dark)
+    // MARK: - Fallback / default values (Synapse (Dark))
     // These are used when no ThemeEnvironment is available (tests, previews, AppKit call-sites).
 
     static let _canvas         = Color(white: 0.05)

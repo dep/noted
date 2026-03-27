@@ -29,7 +29,7 @@ final class SettingsManagerThemeTests: XCTestCase {
     // MARK: - Default state
 
     func test_defaultActiveThemeName_isSynapseDark() {
-        XCTAssertEqual(sut.activeThemeName, "Synapse Dark")
+        XCTAssertEqual(sut.activeThemeName, "Synapse (Dark)")
     }
 
     func test_defaultCustomThemes_isEmpty() {
@@ -39,10 +39,10 @@ final class SettingsManagerThemeTests: XCTestCase {
     // MARK: - Active theme persistence
 
     func test_activeThemeName_persistsToVaultConfig() {
-        sut.activeThemeName = "Dracula"
+        sut.activeThemeName = "Dracula (Dark)"
 
         let reloaded = SettingsManager(vaultRoot: vaultDir, globalConfigPath: globalConfigPath)
-        XCTAssertEqual(reloaded.activeThemeName, "Dracula")
+        XCTAssertEqual(reloaded.activeThemeName, "Dracula (Dark)")
     }
 
     func test_activeThemeName_missingFromYAMLDefaultsToSynapseDark() {
@@ -60,7 +60,7 @@ final class SettingsManagerThemeTests: XCTestCase {
         try! yaml.write(to: configFile, atomically: true, encoding: .utf8)
 
         let mgr = SettingsManager(vaultRoot: vaultDir, globalConfigPath: globalConfigPath)
-        XCTAssertEqual(mgr.activeThemeName, "Synapse Dark")
+        XCTAssertEqual(mgr.activeThemeName, "Synapse (Dark)")
     }
 
     // MARK: - Custom themes persistence
@@ -90,8 +90,8 @@ final class SettingsManagerThemeTests: XCTestCase {
     // MARK: - activeTheme computed property
 
     func test_activeTheme_returnsMatchingBuiltIn() {
-        sut.activeThemeName = "Dracula"
-        XCTAssertEqual(sut.activeTheme.name, "Dracula")
+        sut.activeThemeName = "Dracula (Dark)"
+        XCTAssertEqual(sut.activeTheme.name, "Dracula (Dark)")
         XCTAssertTrue(sut.activeTheme.isBuiltIn)
     }
 
@@ -105,7 +105,7 @@ final class SettingsManagerThemeTests: XCTestCase {
 
     func test_activeTheme_fallsBackToSynapseDarkForUnknownName() {
         sut.activeThemeName = "NonExistent Theme"
-        XCTAssertEqual(sut.activeTheme.name, "Synapse Dark")
+        XCTAssertEqual(sut.activeTheme.name, "Synapse (Dark)")
     }
 
     // MARK: - allThemes computed property
@@ -113,10 +113,10 @@ final class SettingsManagerThemeTests: XCTestCase {
     func test_allThemes_containsBuiltInsFirst() {
         let all = sut.allThemes
         let names = all.map(\.name)
-        XCTAssertTrue(names.prefix(4).contains("Synapse Dark"))
-        XCTAssertTrue(names.prefix(4).contains("Synapse Light"))
-        XCTAssertTrue(names.prefix(4).contains("Solarized"))
-        XCTAssertTrue(names.prefix(4).contains("Dracula"))
+        XCTAssertTrue(names.prefix(4).contains("Synapse (Dark)"))
+        XCTAssertTrue(names.prefix(4).contains("Synapse (Light)"))
+        XCTAssertTrue(names.prefix(4).contains("Solarized (Dark)"))
+        XCTAssertTrue(names.prefix(4).contains("Dracula (Dark)"))
     }
 
     func test_allThemes_appendsCustomThemesAfterBuiltIns() {
@@ -125,15 +125,16 @@ final class SettingsManagerThemeTests: XCTestCase {
             AppTheme(name: "Custom 2", colors: [:]),
         ]
         let all = sut.allThemes
-        XCTAssertEqual(all.count, 6) // 4 built-in + 2 custom
-        XCTAssertEqual(all[4].name, "Custom 1")
-        XCTAssertEqual(all[5].name, "Custom 2")
+        let builtInCount = AppTheme.builtInThemes.count
+        XCTAssertEqual(all.count, builtInCount + 2)
+        XCTAssertEqual(all[builtInCount].name, "Custom 1")
+        XCTAssertEqual(all[builtInCount + 1].name, "Custom 2")
     }
 
     // MARK: - Theme stored in vault config, not global config
 
     func test_activeThemeName_storedInVaultConfigNotGlobal() {
-        sut.activeThemeName = "Solarized"
+        sut.activeThemeName = "Solarized (Dark)"
 
         let vaultYAML = try! String(
             contentsOf: vaultDir.appendingPathComponent(".synapse/settings.yml"), encoding: .utf8)

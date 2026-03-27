@@ -9,14 +9,40 @@ final class AppThemeTests: XCTestCase {
 
     func test_builtInThemes_containsExpectedNames() {
         let names = AppTheme.builtInThemes.map(\.name)
-        XCTAssertTrue(names.contains("Synapse Dark"))
-        XCTAssertTrue(names.contains("Synapse Light"))
-        XCTAssertTrue(names.contains("Solarized"))
-        XCTAssertTrue(names.contains("Dracula"))
+        XCTAssertTrue(names.contains("Synapse (Dark)"))
+        XCTAssertTrue(names.contains("Synapse (Light)"))
+        XCTAssertTrue(names.contains("Solarized (Dark)"))
+        XCTAssertTrue(names.contains("Dracula (Dark)"))
+        XCTAssertTrue(names.contains("GitHub (Dark)"))
+        XCTAssertTrue(names.contains("Minimalist (Dark)"))
+        XCTAssertTrue(names.contains("Cyberpunk (Dark)"))
+        XCTAssertTrue(names.contains("Rainbow (Light)"))
+        XCTAssertTrue(names.contains("Rainbow (Dark)"))
+        XCTAssertTrue(names.contains("Protanopia (Dark)"))
+        XCTAssertTrue(names.contains("Deuteranopia (Dark)"))
+    }
+
+    func test_builtInThemes_containsElevenThemes() {
+        XCTAssertEqual(AppTheme.builtInThemes.count, 11)
+    }
+
+    func test_minimalistDark_usesReadableSelectionAccentTokens() {
+        XCTAssertEqual(AppTheme.minimalistDark.colors["accent"], "#5E5E5E")
+        XCTAssertEqual(AppTheme.minimalistDark.colors["accent.soft"], "#3F3F3F")
+    }
+
+    func test_colorblindDarkThemes_useDistinctNonRedGreenSignals() {
+        XCTAssertEqual(AppTheme.protanopiaDark.colors["accent"], "#5AA9FF")
+        XCTAssertEqual(AppTheme.protanopiaDark.colors["success"], "#7FDBFF")
+        XCTAssertEqual(AppTheme.protanopiaDark.colors["error"], "#FFB86B")
+
+        XCTAssertEqual(AppTheme.deuteranopiaDark.colors["accent"], "#2F6E9F")
+        XCTAssertEqual(AppTheme.deuteranopiaDark.colors["success"], "#FFD166")
+        XCTAssertEqual(AppTheme.deuteranopiaDark.colors["error"], "#FF8FAB")
     }
 
     func test_builtInThemes_synapseDarkIsDefault() {
-        XCTAssertEqual(AppTheme.builtInThemes.first?.name, "Synapse Dark")
+        XCTAssertEqual(AppTheme.builtInThemes.first?.name, "Synapse (Dark)")
     }
 
     func test_builtInThemes_haveRequiredColorKeys() {
@@ -195,7 +221,7 @@ final class AppThemeImporterTests: XCTestCase {
     func test_importTheme_builtInNameThrows() {
         let json = """
         {
-            "name": "Synapse Dark",
+            "name": "Synapse (Dark)",
             "colors": { "accent": "#ff5f87" }
         }
         """
