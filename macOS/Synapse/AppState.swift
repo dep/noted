@@ -1072,10 +1072,18 @@ class AppState: ObservableObject {
 
     /// Tokenises `text` into lowercase words for the inverted search index.
     /// Splits on any non-alphanumeric character so punctuation doesn't bleed into tokens.
+    ///
+    /// IMPORTANT: lowercasing must happen BEFORE enumeration so that the `range` values
+    /// produced by `enumerateSubstrings` are valid indices into the same string being
+    /// subscripted. Some Unicode characters change byte-length when lowercased (e.g.
+    /// Turkish "İ" → "i\u{307}"), which shifts all subsequent ranges and causes spurious
+    /// tokens to be indexed under wrong words if the original and lowercased strings are
+    /// mixed.
     static func wordTokens(from text: String) -> Set<String> {
+        let lower = text.lowercased()
         var tokens = Set<String>()
-        text.lowercased().enumerateSubstrings(in: text.startIndex..., options: [.byWords, .substringNotRequired]) { _, range, _, _ in
-            let word = String(text[range]).lowercased()
+        lower.enumerateSubstrings(in: lower.startIndex..., options: [.byWords, .substringNotRequired]) { _, range, _, _ in
+            let word = String(lower[range])
             if !word.isEmpty { tokens.insert(word) }
         }
         return tokens

@@ -246,6 +246,36 @@ final class SearchIndexTests: XCTestCase {
     func test_searchIndexMinWordLength_isThree() {
         XCTAssertEqual(AppState.searchIndexMinWordLength, 3)
     }
+
+    // MARK: - Unicode safety in wordTokens
+
+    func test_wordTokens_doesNotProduceSpuriousTokensForUnicodeLengthChangingChars() {
+        // Turkish dotted capital I (İ, U+0130) lowercases to "i\u{0307}" (two code units),
+        // changing the string length. This used to cause the range from the lowercased
+        // enumeration to be applied to the original string, producing garbage tokens.
+        let text = "İstanbul meeting notes"
+        let tokens = AppState.wordTokens(from: text)
+        XCTAssertTrue(tokens.contains("i̇stanbul") || tokens.contains("istanbul"),
+                      "Turkish I should tokenise to its lowercased form")
+        XCTAssertTrue(tokens.contains("meeting"))
+        XCTAssertTrue(tokens.contains("notes"))
+        // Must NOT contain any spurious tokens that aren't words in the input
+        let unexpected = tokens.filter { $0.contains("tacoma") || $0.count > 20 }
+        XCTAssertTrue(unexpected.isEmpty, "No spurious tokens: \(unexpected)")
+    }
+
+    func test_wordTokens_fileWithSpecialCharsDoesNotPolluteCandidateIndex() {
+        // Regression: a file containing Unicode length-changing chars was causing
+        // unrelated files to appear as candidates for queries they don't contain.
+        let unrelated = makeFile(named: "unrelated.md", content: "İstanbul notes from the meeting")
+        let target = makeFile(named: "target.md", content: "tacoma washington")
+        sut.openFolder(tempDir)
+        let candidates = sut.candidateFiles(for: "tacoma")
+        XCTAssertTrue(candidates.contains(target),
+                      "File containing 'tacoma' must be a candidate")
+        XCTAssertFalse(candidates.contains(unrelated),
+                       "File NOT containing 'tacoma' must not be a candidate (spurious index pollution)")
+    }
 }
 
 

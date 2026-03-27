@@ -383,6 +383,18 @@ struct AllFilesSearchView: View {
                 }
                 if found.count >= 200 { break }
             }
+            // Sort by file modification date — most recently modified files first,
+            // so today's notes surface above older ones for the same query.
+            let modDates: [URL: Date] = cacheSnapshot.reduce(into: [:]) { d, pair in
+                d[pair.key] = pair.value.modificationDate
+            }
+            found.sort {
+                let a = modDates[$0.url] ?? .distantPast
+                let b = modDates[$1.url] ?? .distantPast
+                if a != b { return a > b }
+                // Stable secondary sort: earlier line number first within the same file
+                return $0.lineNumber < $1.lineNumber
+            }
             DispatchQueue.main.async {
                 // Only update if this search wasn't cancelled
                 guard appState != nil else { return }
