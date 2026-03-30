@@ -42,10 +42,13 @@
 		2AFDB8D000CDBF4CFAA8DD4D /* SettingsManagerMovePaneItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B3634CCE5B1774C3C102A98 /* SettingsManagerMovePaneItemTests.swift */; };
 		2BC48E2C0D37A10970E02BCB /* NoteReferenceResolutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F7DD11836187C1CE8BCD2CF /* NoteReferenceResolutionTests.swift */; };
 		2F329EFC9C37AE1116380D50 /* GistPublisherHTTPTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B7F3B91E514504EEA336B55 /* GistPublisherHTTPTests.swift */; };
+		B1B2C3D401234567890ABCDE2 /* MiniBrowserControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D401234567890ABCDE1 /* MiniBrowserControllerTests.swift */; };
 		2FEDA0AA1173E86300BECD62 /* MarkdownEditorSemanticStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA291BB0D7F58173BE62A2C /* MarkdownEditorSemanticStyles.swift */; };
 		315A8AE54124895F0F9968A9 /* AppStateInactivePaneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B27EA6038CE434E63D723B28 /* AppStateInactivePaneTests.swift */; };
 		374896C6C09F48147147D1BD /* AppStateSplitPaneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4F955DD37FCF31EA4E20E7 /* AppStateSplitPaneTests.swift */; };
 		37B5E15E3F64988C8315C4B2 /* ContentCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2521831A835D4452BEFF98A /* ContentCacheTests.swift */; };
+		A1B2C3D401234567890ABCDE2 /* CachedFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D401234567890ABCDE1 /* CachedFileTests.swift */; };
+		C1B2C3D401234567890ABCDE2 /* ThemeEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1B2C3D401234567890ABCDE1 /* ThemeEnvironmentTests.swift */; };
 		37D9958A42C0B10CA58FF96E /* AppStateTagsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE1AEA1E774C98F1243030F5 /* AppStateTagsTests.swift */; };
 		3922732A4CB7398AD1BB100F /* MarkdownEditorInlineSemanticStylesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BACA7AE5D4E066C647E7063E /* MarkdownEditorInlineSemanticStylesTests.swift */; };
 		399BAD4F8D874258D0F43EBB /* GlobalGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3CE451A43640282F817405D /* GlobalGraphView.swift */; };
@@ -401,6 +404,9 @@
 		F0B00871B184157E21F3C346 /* AppStateEditModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateEditModeTests.swift; sourceTree = "<group>"; };
 		F1A8BAEDD2536A6A0E7D0F25 /* HTMLPasteCodeBlockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLPasteCodeBlockTests.swift; sourceTree = "<group>"; };
 		F2521831A835D4452BEFF98A /* ContentCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentCacheTests.swift; sourceTree = "<group>"; };
+		A1B2C3D401234567890ABCDE1 /* CachedFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedFileTests.swift; sourceTree = "<group>"; };
+		B1B2C3D401234567890ABCDE1 /* MiniBrowserControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniBrowserControllerTests.swift; sourceTree = "<group>"; };
+		C1B2C3D401234567890ABCDE1 /* ThemeEnvironmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeEnvironmentTests.swift; sourceTree = "<group>"; };
 		F2819956191CAC51CF76DAFA /* AppStateFileOperationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateFileOperationsTests.swift; sourceTree = "<group>"; };
 		F5B2A3616AB5C3D1E0A2F97F /* AppStateCloseTabAutoSaveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateCloseTabAutoSaveTests.swift; sourceTree = "<group>"; };
 		F88EA4153C25D088562FAC1C /* GistPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GistPublisher.swift; sourceTree = "<group>"; };
@@ -546,6 +552,7 @@
 				A307C880E354FA57E8BFEB62 /* CollapsibleSectionsTests.swift */,
 				3FAFBB2B334B2C5C148C42E6 /* CommandPaletteScoringTests.swift */,
 				2C6CE68315BD0E501C83B675 /* CommandPaletteWikiLinkTests.swift */,
+				A1B2C3D401234567890ABCDE1 /* CachedFileTests.swift */,
 				F2521831A835D4452BEFF98A /* ContentCacheTests.swift */,
 				D989BB1299DADE947BAB87AA /* DailyNotesOpenOnStartupTests.swift */,
 				07462473C99EA91E27849EEA /* DailyNoteStartupBehaviorTests.swift */,
@@ -589,6 +596,7 @@
 				E877F68AF193B04EA5544A74 /* MarkdownEditorRefreshPlanTests.swift */,
 				6479243A7580C1FC3FEB07EF /* MarkdownEditorSemanticStylesTests.swift */,
 				A6B5F3DD5C65C970478B2840 /* MarkdownPreviewCSSTests.swift */,
+				B1B2C3D401234567890ABCDE1 /* MiniBrowserControllerTests.swift */,
 				7FD7F746154C499C0686A914 /* MarkdownPreviewCursorRevealTests.swift */,
 				533FB35FAD975DD196500CCA /* MarkdownPreviewRendererTests.swift */,
 				7CEBE5113F540623222FB440 /* MarkdownPreviewSemanticHidingTests.swift */,
@@ -620,6 +628,7 @@
 				9D6A78049408A64B9D89D287 /* SettingsManagerSidebarCollapseTests.swift */,
 				3ECDBE060D21A22336AC6312 /* SettingsManagerTests.swift */,
 				2A6300042BEBE1EFB7DCA293 /* SettingsManagerThemeTests.swift */,
+				C1B2C3D401234567890ABCDE1 /* ThemeEnvironmentTests.swift */,
 				37535D804D7598740D99FEDD /* SettingsPersistenceTests.swift */,
 				1F0D39A7D2927674CD66BA12 /* SidebarAutoCollapseTests.swift */,
 				9D6B6923B1814AF9178F7B51 /* SidebarDragDropTests.swift */,
@@ -797,6 +806,7 @@
 				E84D8DF773FF8BED5152D2BC /* CollapsibleSectionsTests.swift in Sources */,
 				452CC50BA74921E6D69CE307 /* CommandPaletteScoringTests.swift in Sources */,
 				97F1AC38016EBF6D20DA80F5 /* CommandPaletteWikiLinkTests.swift in Sources */,
+				A1B2C3D401234567890ABCDE2 /* CachedFileTests.swift in Sources */,
 				37B5E15E3F64988C8315C4B2 /* ContentCacheTests.swift in Sources */,
 				65D5879869033697040B2E0A /* DailyNoteStartupBehaviorTests.swift in Sources */,
 				29F4C4E87BAAD286C2712EE9 /* DailyNotesOpenOnStartupTests.swift in Sources */,
@@ -840,6 +850,7 @@
 				0306A5C25EAA1A3B89E5FE79 /* MarkdownEditorRefreshPlanTests.swift in Sources */,
 				64BF7CCEA59FB4C7B945E2FA /* MarkdownEditorSemanticStylesTests.swift in Sources */,
 				42C97646E3C58BA2899B2ECD /* MarkdownPreviewCSSTests.swift in Sources */,
+				B1B2C3D401234567890ABCDE2 /* MiniBrowserControllerTests.swift in Sources */,
 				4329FB8FB9A9CEFACD05A736 /* MarkdownPreviewCursorRevealTests.swift in Sources */,
 				8CBDA9B8ADE2DF2DA5C2C075 /* MarkdownPreviewRendererTests.swift in Sources */,
 				10E0EAC866951DD0805DEC21 /* MarkdownPreviewSemanticHidingTests.swift in Sources */,
@@ -871,6 +882,7 @@
 				AC1269D55BB9FFEADF9308E3 /* SettingsManagerSidebarCollapseTests.swift in Sources */,
 				56E1D8FB1C2F8A356D40A62E /* SettingsManagerTests.swift in Sources */,
 				0AB584CE33553644CB2EE6B3 /* SettingsManagerThemeTests.swift in Sources */,
+				C1B2C3D401234567890ABCDE2 /* ThemeEnvironmentTests.swift in Sources */,
 				7715A2594C966414407B38C9 /* SettingsPersistenceTests.swift in Sources */,
 				C38FA2CB562C74DF68451A15 /* SidebarAutoCollapseTests.swift in Sources */,
 				1626A8B12BFDAD5B528B6ECA /* SidebarDragDropTests.swift in Sources */,

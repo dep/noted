@@ -4,7 +4,7 @@ import Foundation
 
 /// A cached snapshot of a single markdown file's parsed content.
 /// Populated once on scan and updated incrementally on FS changes.
-struct CachedFile {
+struct CachedFile: Equatable {
     /// Raw text content of the file.
     let content: String
     /// File modification date at the time the cache entry was created.

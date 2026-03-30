@@ -49,4 +49,30 @@ final class MarkdownPreviewCursorRevealTests: XCTestCase {
 
         XCTAssertEqual(reveal.revealedRanges, [ns.range(of: "![diagram](https://example.com/diagram.png)")])
     }
+
+    func test_make_revealsHighlightWhenCursorInsideMarkedText() {
+        let markdown = "Text ==marked phrase== end"
+        let ns = markdown as NSString
+        let cursor = ns.range(of: "marked").location + 1
+
+        let reveal = MarkdownPreviewCursorReveal.make(from: markdown, cursorLocation: cursor, isEditable: true)
+
+        XCTAssertEqual(reveal.revealedRanges, [ns.range(of: "==marked phrase==")])
+    }
+
+    func test_make_readOnly_returnsEmptyEvenWhenCursorInsideHighlight() {
+        let markdown = "==secret=="
+        let ns = markdown as NSString
+        let cursor = ns.range(of: "secret").location
+
+        let reveal = MarkdownPreviewCursorReveal.make(from: markdown, cursorLocation: cursor, isEditable: false)
+
+        XCTAssertTrue(reveal.revealedRanges.isEmpty)
+    }
+
+    func test_make_notEditable_returnsEmptyWhenCursorNSNotFound() {
+        let markdown = "plain"
+        let reveal = MarkdownPreviewCursorReveal.make(from: markdown, cursorLocation: NSNotFound, isEditable: true)
+        XCTAssertTrue(reveal.revealedRanges.isEmpty)
+    }
 }
