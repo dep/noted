@@ -504,31 +504,45 @@ struct FileTreeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 8)
         } else {
-            LazyVStack(alignment: .leading, spacing: 6) {
-                ForEach(nodes) { node in
-                    FileNodeRow(
-                        node: node,
-                        depth: 0,
-                        expandedDirs: $expandedDirs,
-                        dragOverFolderURL: $dragOverFolderURL,
-                        loadChildren: { loadChildren(for: $0) },
-                        onCreateNote: { presentCreateNote(in: $0) },
-                        onCreateFolder: { presentCreateFolder(in: $0) },
-                        onRename: { presentRename(for: $0, isDirectory: $1) },
-                        onDelete: { presentDelete(for: $0, isDirectory: $1) },
-                        onMoveFile: { presentMoveFile(from: $0, toFolder: $1) }
-                    )
+            // ZStack layout: root drop zone sits behind the node rows.
+            // SwiftUI hit-tests from front to back, so folder-row drops are captured
+            // by the row modifiers first; only drops into empty space reach the root zone.
+            ZStack(alignment: .topLeading) {
+                // Back layer: root-level drop zone fills the full height
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onDrop(of: [.fileURL], isTargeted: Binding(
+                        get: { dragOverFolderURL == appState.rootURL },
+                        set: { targeted in
+                            dragOverFolderURL = targeted ? appState.rootURL : nil
+                        }
+                    )) { providers in
+                        guard let root = appState.rootURL else { return false }
+                        handleDrop(providers: providers, toFolder: root)
+                        return true
+                    }
+                // Front layer: the actual node rows.
+                // Row drop modifiers take priority over the back-layer root zone because
+                // SwiftUI drop hit-tests from front (last child) to back (first child).
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(nodes) { node in
+                        FileNodeRow(
+                            node: node,
+                            depth: 0,
+                            expandedDirs: $expandedDirs,
+                            dragOverFolderURL: $dragOverFolderURL,
+                            loadChildren: { loadChildren(for: $0) },
+                            onCreateNote: { presentCreateNote(in: $0) },
+                            onCreateFolder: { presentCreateFolder(in: $0) },
+                            onRename: { presentRename(for: $0, isDirectory: $1) },
+                            onDelete: { presentDelete(for: $0, isDirectory: $1) },
+                            onMoveFile: { presentMoveFile(from: $0, toFolder: $1) }
+                        )
+                    }
                 }
-            }
-            .padding(.vertical, 4)
-            // Root-level drop target — allows dragging a file out of any folder to root
-            .onDrop(of: [.fileURL], isTargeted: Binding(
-                get: { dragOverFolderURL == appState.rootURL },
-                set: { targeted in dragOverFolderURL = targeted ? appState.rootURL : nil }
-            )) { providers in
-                guard let root = appState.rootURL else { return false }
-                handleDrop(providers: providers, toFolder: root)
-                return true
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
     }
@@ -944,13 +958,19 @@ private struct FolderDropModifier: ViewModifier {
                     isTargeted: Binding(
                         get: { dragOverFolderURL == folderURL },
                         set: { targeted in
+                            // isTargeted setter is called on the main thread by SwiftUI
                             if targeted {
                                 dragOverFolderURL = folderURL
-                                // Schedule auto-expand after 0.6 s if still hovering
+                                // Schedule auto-expand on the main RunLoop so the timer fires
                                 dragHoverExpandTimer?.invalidate()
-                                dragHoverExpandTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { _ in
-                                    expandedDirs.insert(folderURL)
+                                let url = folderURL
+                                let timer = Timer(timeInterval: 0.6, repeats: false) { _ in
+                                    DispatchQueue.main.async {
+                                        expandedDirs.insert(url)
+                                    }
                                 }
+                                RunLoop.main.add(timer, forMode: .common)
+                                dragHoverExpandTimer = timer
                             } else {
                                 if dragOverFolderURL == folderURL {
                                     dragOverFolderURL = nil
