@@ -6,8 +6,7 @@ Synapse is a powerful Markdown-based knowledge management application exclusivel
 
 <img width="1569" height="1035" alt="image" src="https://github.com/user-attachments/assets/35484b4b-d0d0-4c4c-a4ec-79bdcd935978" />
 
-* Download: https://github.com/dep/synapse/releases/latest
-* Docs: https://synapse-delta-nine.vercel.app/
+[Download](https://github.com/dep/synapse/releases/latest) | [Docs](https://synapse-delta-nine.vercel.app/)
 
 ## Developer stuff
 
