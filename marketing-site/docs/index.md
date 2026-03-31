@@ -213,3 +213,7 @@ When operating in a Synapse vault directory, read `.synapse/state.json` at the s
 If Synapse saves you money on a notes app subscription or just sparks a little joy, a coffee goes a long way. ☕
 
 [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/dnnypck)
+
+## Additional Documentation
+
+- [Markdown Guide and More Tips & Tricks](./markdown.md)
