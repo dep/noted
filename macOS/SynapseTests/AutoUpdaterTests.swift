@@ -65,7 +65,7 @@ final class AutoUpdaterTests: XCTestCase {
     
     func testInitialState() {
         XCTAssertFalse(updater.updateAvailable, "Update should not be available initially")
-        XCTAssertFalse(updater.updateInstalled, "Update should not be installed initially")
+        XCTAssertFalse(updater.restartRequired, "Restart should not be required initially")
         XCTAssertNil(updater.latestVersion, "Latest version should be nil initially")
     }
     
@@ -77,12 +77,7 @@ final class AutoUpdaterTests: XCTestCase {
     }
     
     // MARK: - Additional Edge Case Tests
-    
-    func testReleasesURL() {
-        let expectedURL = URL(string: "https://github.com/dep/synapse/releases")!
-        XCTAssertEqual(updater.releasesURL, expectedURL, "Releases URL should point to GitHub releases page")
-    }
-    
+
     func testEmptyVersionStrings() {
         let result = updater.isNewerVersion(latest: "", current: "1.0.0")
         XCTAssertFalse(result, "Empty latest version should not be newer")
