@@ -390,13 +390,7 @@ struct AllFilesSearchView: View {
             let modDates: [URL: Date] = cacheSnapshot.reduce(into: [:]) { d, pair in
                 d[pair.key] = pair.value.modificationDate
             }
-            found.sort {
-                let a = modDates[$0.url] ?? .distantPast
-                let b = modDates[$1.url] ?? .distantPast
-                if a != b { return a > b }
-                // Stable secondary sort: earlier line number first within the same file
-                return $0.lineNumber < $1.lineNumber
-            }
+            found = AllFilesSearchResultSorting.sortByModificationDate(found, modDates: modDates)
             DispatchQueue.main.async {
                 // Only update if this search wasn't cancelled
                 guard appState != nil else { return }

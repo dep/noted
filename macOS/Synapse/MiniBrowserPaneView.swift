@@ -25,19 +25,9 @@ final class MiniBrowserController: NSObject, ObservableObject, WKNavigationDeleg
     }
 
     func load(_ input: String) {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let normalized: String
-        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-            normalized = trimmed
-        } else {
-            normalized = "https://\(trimmed)"
-        }
-
-        guard let url = URL(string: normalized) else { return }
-        urlText = normalized
-        webView.load(URLRequest(url: url))
+        guard let pair = MiniBrowserURLNormalizer.normalizedURL(for: input) else { return }
+        urlText = pair.string
+        webView.load(URLRequest(url: pair.url))
     }
 
     func reload() {
