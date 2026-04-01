@@ -210,6 +210,25 @@ final class PinningFeatureTests: XCTestCase {
         XCTAssertEqual(folderPin!.name, "meta-folder")
     }
 
+    // MARK: - Pinned Section Visibility (drives collapse button rendering)
+
+    func test_pinnedSection_hiddenWhenNoPins() {
+        XCTAssertTrue(appState.pinnedItems.isEmpty, "Section should not render when there are no pins")
+    }
+
+    func test_pinnedSection_visibleAfterPinningItem() {
+        let fileURL = createFile(at: "visible.md", contents: "# Visible")
+        appState.pinItem(fileURL)
+        XCTAssertFalse(appState.pinnedItems.isEmpty, "Section should render when at least one item is pinned")
+    }
+
+    func test_pinnedSection_hiddenAgainAfterUnpinningLastItem() {
+        let fileURL = createFile(at: "last.md", contents: "# Last")
+        appState.pinItem(fileURL)
+        appState.unpinItem(fileURL)
+        XCTAssertTrue(appState.pinnedItems.isEmpty, "Section should hide again when all items are unpinned")
+    }
+
     // MARK: - Helpers
 
     @discardableResult

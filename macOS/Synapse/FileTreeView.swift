@@ -135,6 +135,7 @@ struct FileTreeView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var themeEnv: ThemeEnvironment
     let settings: SettingsManager
+    @State private var isPinnedSectionCollapsed = false
     @State private var nodes: [FileNode] = []
     @State private var expandedDirs: Set<URL> = []
     /// Cache of lazily-loaded directory children keyed by directory URL.
@@ -218,12 +219,13 @@ struct FileTreeView: View {
             .onChange(of: appState.isNewNotePromptRequested) { _, requested in
                 guard requested else { return }
                 appState.isNewNotePromptRequested = false
-                let dir = appState.targetDirectoryForTemplate ?? appState.rootURL
+                // Use targetDirectoryForNewNote if set (from presentRootNoteSheet), otherwise fall back to targetDirectoryForTemplate or root
+                let dir = appState.targetDirectoryForNewNote ?? appState.targetDirectoryForTemplate ?? appState.rootURL
                 presentCreateNote(in: dir)
             }
             .sheet(item: $editorAction) { action in
-                BrowserItemEditorSheet(action: action) { submittedName in
-                    handleEditorSubmit(action: action, submittedName: submittedName)
+                BrowserItemEditorSheet(action: action) { submittedName, selectedFolder in
+                    handleEditorSubmit(action: action, submittedName: submittedName, selectedFolder: selectedFolder)
                 }
             }
             .alert(
@@ -356,14 +358,27 @@ struct FileTreeView: View {
     @ViewBuilder
     private var pinnedSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Pinned")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .tracking(1.8)
-                .foregroundStyle(SynapseTheme.textMuted)
+            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { isPinnedSectionCollapsed.toggle() } }) {
+                HStack(spacing: 4) {
+                    Text("Pinned")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .tracking(1.8)
+                        .foregroundStyle(SynapseTheme.textMuted)
+                    Spacer()
+                    Image(systemName: isPinnedSectionCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(SynapseTheme.textMuted)
+                }
                 .padding(.horizontal, 8)
                 .padding(.top, 4)
-            ForEach(appState.pinnedItems) { item in
-                PinnedItemRow(item: item)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !isPinnedSectionCollapsed {
+                ForEach(appState.pinnedItems) { item in
+                    PinnedItemRow(item: item)
+                }
             }
         }
         .padding(.bottom, 8)
@@ -694,17 +709,19 @@ struct FileTreeView: View {
         deleteTarget = BrowserDeleteTarget(url: url, isDirectory: isDirectory)
     }
 
-    private func handleEditorSubmit(action: BrowserEditorAction, submittedName: String) {
+    private func handleEditorSubmit(action: BrowserEditorAction, submittedName: String, selectedFolder: URL?) {
         do {
             switch action.kind {
             case .newNote:
+                // Use selected folder if provided, otherwise fall back to action.parentURL
+                let targetFolder = selectedFolder ?? action.parentURL
                 if let templateURL = appState.pendingTemplateURL {
                     appState.pendingTemplateURL = nil
-                    _ = try appState.createNamedNoteFromTemplate(templateURL, named: submittedName, in: action.parentURL)
+                    _ = try appState.createNamedNoteFromTemplate(templateURL, named: submittedName, in: targetFolder)
                 } else {
-                    _ = try appState.createNote(named: submittedName, in: action.parentURL)
+                    _ = try appState.createNote(named: submittedName, in: targetFolder)
                 }
-                expandedDirs.insert(action.parentURL)
+                expandedDirs.insert(targetFolder)
             case .newFolder:
                 let newURL = try appState.createFolder(named: submittedName, in: action.parentURL)
                 expandedDirs.insert(action.parentURL)
@@ -1139,16 +1156,42 @@ struct PinnedItemRow: View {
 }
 
 private struct BrowserItemEditorSheet: View {
+    @EnvironmentObject var appState: AppState
     let action: BrowserEditorAction
-    let onSubmit: (String) -> Void
+    let onSubmit: (String, URL?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
+    @State private var selectedFolder: URL?
+    @State private var folderSearchQuery = ""
+    @State private var isFolderPickerExpanded = false
 
-    init(action: BrowserEditorAction, onSubmit: @escaping (String) -> Void) {
+    init(action: BrowserEditorAction, onSubmit: @escaping (String, URL?) -> Void) {
         self.action = action
         self.onSubmit = onSubmit
         _name = State(initialValue: action.initialName)
+        _selectedFolder = State(initialValue: action.parentURL)
+    }
+
+    private var availableFolders: [URL] {
+        appState.availableFoldersForPicker()
+    }
+
+    private var filteredFolders: [URL] {
+        if folderSearchQuery.isEmpty {
+            return availableFolders
+        }
+        return availableFolders.filter { folder in
+            folder.lastPathComponent.localizedCaseInsensitiveContains(folderSearchQuery)
+        }
+    }
+
+    private var selectedFolderDisplay: String {
+        guard let selected = selectedFolder else { return "Root" }
+        if selected == appState.rootURL {
+            return "Root"
+        }
+        return selected.lastPathComponent
     }
 
     var body: some View {
@@ -1167,6 +1210,82 @@ private struct BrowserItemEditorSheet: View {
                     .onSubmit(performSubmit)
             }
 
+            // Folder picker for new notes (Issue #194)
+            if action.kind == .newNote {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Location")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SynapseTheme.textSecondary)
+
+                    // Dropdown button
+                    Button(action: { isFolderPickerExpanded.toggle() }) {
+                        HStack {
+                            Text(selectedFolderDisplay)
+                                .foregroundStyle(SynapseTheme.textPrimary)
+                            Spacer()
+                            Image(systemName: isFolderPickerExpanded ? "chevron.up" : "chevron.down")
+                                .foregroundStyle(SynapseTheme.textMuted)
+                        }
+                        .padding(8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(SynapseTheme.border, lineWidth: 1)
+                    )
+
+                    // Expanded folder picker
+                    if isFolderPickerExpanded {
+                        VStack(spacing: 0) {
+                            // Search field
+                            TextField("Search folders...", text: $folderSearchQuery)
+                                .textFieldStyle(.roundedBorder)
+                                .padding(8)
+
+                            // Folder list
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 2) {
+                                    ForEach(filteredFolders, id: \.self) { folder in
+                                        let isSelected = selectedFolder == folder
+                                        Button(action: {
+                                            selectedFolder = folder
+                                            isFolderPickerExpanded = false
+                                            folderSearchQuery = ""
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "folder")
+                                                    .foregroundStyle(isSelected ? SynapseTheme.accent : SynapseTheme.textMuted)
+                                                Text(folder == appState.rootURL ? "Root" : folder.lastPathComponent)
+                                                    .foregroundStyle(isSelected ? SynapseTheme.accent : SynapseTheme.textPrimary)
+                                                Spacer()
+                                                if isSelected {
+                                                    Image(systemName: "checkmark")
+                                                        .foregroundStyle(SynapseTheme.accent)
+                                                }
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .background(isSelected ? SynapseTheme.accent.opacity(0.1) : Color.clear)
+                                        .cornerRadius(4)
+                                    }
+                                }
+                                .padding(4)
+                            }
+                            .frame(maxHeight: 200)
+                        }
+                        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(SynapseTheme.border, lineWidth: 1)
+                        )
+                    }
+                }
+            }
+
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -1179,7 +1298,7 @@ private struct BrowserItemEditorSheet: View {
     }
 
     private func performSubmit() {
-        onSubmit(name)
+        onSubmit(name, action.kind == .newNote ? selectedFolder : nil)
         dismiss()
     }
 }

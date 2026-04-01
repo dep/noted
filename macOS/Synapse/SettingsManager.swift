@@ -1354,7 +1354,8 @@ class SettingsManager: ObservableObject {
                 collapsedSidebarIDs: collapsedSidebarIDs.isEmpty ? nil : collapsedSidebarIDs,
                 sidebarPaneAssignments: sidebarPaneAssignments,
                 fileTreeMode: fileTreeMode.rawValue,
-                vaultPaths: vaultPaths.isEmpty ? nil : vaultPaths
+                vaultPaths: vaultPaths.isEmpty ? nil : vaultPaths,
+                lastNoteFolderPerVault: lastNoteFolderPerVault.isEmpty ? nil : lastNoteFolderPerVault
             )
             guard let globalYAML = try? YAMLEncoder().encode(globalConfig) else { return }
             let globalURL = URL(fileURLWithPath: globalConfigPath)
