@@ -59,6 +59,7 @@ Visualize connections between your notes.
 ### Daily Notes & Templates
 - **Daily Notes:** Start each day with a fresh note created automatically using customizable templates.
 - **Templates:** Use templates for dynamic note creation with variables like <code v-pre>{{year}}</code>, <code v-pre>{{month}}</code>, <code v-pre>{{day}}</code>, and <code v-pre>{{cursor}}</code> (where the cursor lands after template insertion).
+- **New Note with Folder Picker:** When creating a new note (via `CMD+N` or the + button), a folder picker lets you choose exactly where to save it. Synapse remembers your last used folder per vault and pre-selects it for subsequent notes. Right-click any folder in the file tree and select "New Note" to pre-select that specific folder.
 
 ### Pinning
 Pin frequently used notes, folders, and tags for quick access directly from the sidebar.

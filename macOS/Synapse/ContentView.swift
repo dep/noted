@@ -861,6 +861,29 @@ private struct RootNoteSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var errorMessage: String?
+    @State private var folderSearchQuery = ""
+    @State private var isFolderPickerExpanded = false
+
+    private var availableFolders: [URL] {
+        appState.availableFoldersForPicker()
+    }
+
+    private var filteredFolders: [URL] {
+        if folderSearchQuery.isEmpty {
+            return availableFolders
+        }
+        return availableFolders.filter { folder in
+            folder.lastPathComponent.localizedCaseInsensitiveContains(folderSearchQuery)
+        }
+    }
+
+    private var selectedFolderDisplay: String {
+        guard let selected = appState.targetDirectoryForNewNote else { return "Root" }
+        if selected == appState.rootURL {
+            return "Root"
+        }
+        return selected.lastPathComponent
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -876,10 +899,79 @@ private struct RootNoteSheet: View {
                 TextField("Inbox", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(createNote)
+            }
 
-                Text("Creates the note in your workspace root. `.md` is added automatically.")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(SynapseTheme.textMuted)
+            // Folder Picker (Issue #194)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Location")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(SynapseTheme.textSecondary)
+
+                // Dropdown button
+                Button(action: { isFolderPickerExpanded.toggle() }) {
+                    HStack {
+                        Text(selectedFolderDisplay)
+                            .foregroundStyle(SynapseTheme.textPrimary)
+                        Spacer()
+                        Image(systemName: isFolderPickerExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundStyle(SynapseTheme.textMuted)
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(SynapseTheme.border, lineWidth: 1)
+                )
+
+                // Expanded folder picker
+                if isFolderPickerExpanded {
+                    VStack(spacing: 0) {
+                        // Search field
+                        TextField("Search folders...", text: $folderSearchQuery)
+                            .textFieldStyle(.roundedBorder)
+                            .padding(8)
+
+                        // Folder list
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(filteredFolders, id: \.self) { folder in
+                                    let isSelected = appState.targetDirectoryForNewNote == folder
+                                    Button(action: {
+                                        appState.targetDirectoryForNewNote = folder
+                                        isFolderPickerExpanded = false
+                                        folderSearchQuery = ""
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "folder")
+                                                .foregroundStyle(isSelected ? SynapseTheme.accent : SynapseTheme.textMuted)
+                                            Text(folder == appState.rootURL ? "Root" : folder.lastPathComponent)
+                                                .foregroundStyle(isSelected ? SynapseTheme.accent : SynapseTheme.textPrimary)
+                                            Spacer()
+                                            if isSelected {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundStyle(SynapseTheme.accent)
+                                            }
+                                        }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .background(isSelected ? SynapseTheme.accent.opacity(0.1) : Color.clear)
+                                    .cornerRadius(4)
+                                }
+                            }
+                            .padding(4)
+                        }
+                        .frame(maxHeight: 200)
+                    }
+                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(SynapseTheme.border, lineWidth: 1)
+                    )
+                }
             }
 
             if let errorMessage {
@@ -904,7 +996,7 @@ private struct RootNoteSheet: View {
 
     private func createNote() {
         do {
-            _ = try appState.createNote(named: name)
+            _ = try appState.createNote(named: name, in: appState.targetDirectoryForNewNote)
             appState.dismissRootNoteSheet()
             dismiss()
         } catch {

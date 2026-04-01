@@ -202,6 +202,8 @@ class AppState: ObservableObject {
     @Published var pendingSearchQuery: String? = nil
     @Published var commandPaletteMode: CommandPaletteMode = .files
     @Published var targetDirectoryForTemplate: URL?
+    /// Target directory for new note creation (Issue #194) - stores the selected folder in the New Note sheet
+    @Published var targetDirectoryForNewNote: URL?
     @Published var isRootNoteSheetPresented: Bool = false
     @Published var isSearchPresented: Bool = false
     @Published var pendingTemplateRename: TemplateRenameRequest?
@@ -2050,7 +2052,20 @@ class AppState: ObservableObject {
     }
 
     func presentRootNoteSheet(in directory: URL? = nil) {
-        guard rootURL != nil else { return }
+        guard let root = rootURL else { return }
+
+        // Set target directory based on context (Issue #194)
+        if let explicitDirectory = directory {
+            // Right-click on specific folder - use that folder
+            targetDirectoryForNewNote = explicitDirectory
+        } else if let lastPath = settings.lastNoteFolderPath(forVault: root.path),
+                  FileManager.default.fileExists(atPath: lastPath) {
+            // Use last remembered folder if it still exists
+            targetDirectoryForNewNote = URL(fileURLWithPath: lastPath)
+        } else {
+            // Default to vault root
+            targetDirectoryForNewNote = root
+        }
 
         self.targetDirectoryForTemplate = directory
 
@@ -2065,6 +2080,31 @@ class AppState: ObservableObject {
 
     func dismissRootNoteSheet() {
         isRootNoteSheetPresented = false
+        // Don't clear targetDirectoryForNewNote here - let createNote handle it
+    }
+
+    /// Returns all folders in the vault for the folder picker (Issue #194)
+    func availableFoldersForPicker() -> [URL] {
+        guard let root = rootURL else { return [] }
+
+        var folders: [URL] = [root]
+        let fm = FileManager.default
+
+        guard let enumerator = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return folders }
+
+        for case let url as URL in enumerator {
+            var isDirectory: ObjCBool = false
+            if fm.fileExists(atPath: url.path, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                folders.append(url.standardizedFileURL)
+            }
+        }
+
+        return folders.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 
     @discardableResult
@@ -2081,6 +2121,11 @@ class AppState: ObservableObject {
         let created = fm.createFile(atPath: url.path, contents: Data(), attributes: nil)
         guard created else {
             throw FileBrowserError.operationFailed("Could not create the note.")
+        }
+
+        // Remember the folder used for this note (Issue #194)
+        if let root = rootURL {
+            settings.setLastNoteFolderPath(directory.path, forVault: root.path)
         }
 
         refreshAllFiles()
