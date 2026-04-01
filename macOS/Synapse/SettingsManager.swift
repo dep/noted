@@ -295,6 +295,10 @@ class SettingsManager: ObservableObject {
     @Published var vaultPaths: [String] {
         didSet { save() }
     }
+    /// Maps vault path -> last folder path used for creating notes (Issue #194)
+    @Published var lastNoteFolderPerVault: [String: String] {
+        didSet { save() }
+    }
     /// When true, directories matching .gitignore rules are skipped during file scanning.
     @Published var respectGitignore: Bool {
         didSet { save() }
@@ -427,6 +431,16 @@ class SettingsManager: ObservableObject {
         !githubPAT.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Returns the last folder used for creating notes in a given vault (Issue #194)
+    func lastNoteFolderPath(forVault vaultPath: String) -> String? {
+        lastNoteFolderPerVault[vaultPath]
+    }
+
+    /// Sets the last folder used for creating notes in a given vault (Issue #194)
+    func setLastNoteFolderPath(_ folderPath: String, forVault vaultPath: String) {
+        lastNoteFolderPerVault[vaultPath] = folderPath
+    }
+
     /// Apply a saved pane-assignment dictionary to the fixed sidebar list.
     static func applyPaneAssignments(_ assignments: [String: [SidebarPaneItem]]?) -> [Sidebar] {
         guard let assignments else { return FixedSidebar.all }
@@ -493,6 +507,7 @@ class SettingsManager: ObservableObject {
         var editorFontSize: Int?
         var editorLineHeight: Double?
         var respectGitignore: Bool?
+        var lastNoteFolderPerVault: [String: String]?
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -523,6 +538,7 @@ class SettingsManager: ObservableObject {
             editorFontSize = try container.decodeIfPresent(Int.self, forKey: .editorFontSize)
             editorLineHeight = try container.decodeIfPresent(Double.self, forKey: .editorLineHeight)
             respectGitignore = try container.decodeIfPresent(Bool.self, forKey: .respectGitignore)
+            lastNoteFolderPerVault = try container.decodeIfPresent([String: String].self, forKey: .lastNoteFolderPerVault)
         }
     }
 
@@ -640,6 +656,8 @@ class SettingsManager: ObservableObject {
         var fileTreeMode: String?
         /// Array of vault path candidates - first existing path is used
         var vaultPaths: [String]?
+        /// Maps vault path -> last folder path used for creating notes (Issue #194)
+        var lastNoteFolderPerVault: [String: String]?
         /// Legacy single vault path for backward compatibility (deprecated)
         var vaultPath: String?
 
@@ -650,7 +668,8 @@ class SettingsManager: ObservableObject {
             collapsedSidebarIDs: [String]?,
             sidebarPaneAssignments: [String: [SidebarPaneItem]]?,
             fileTreeMode: String?,
-            vaultPaths: [String]? = nil
+            vaultPaths: [String]? = nil,
+            lastNoteFolderPerVault: [String: String]? = nil
         ) {
             self.githubPAT = githubPAT
             self.sidebarPaneHeights = sidebarPaneHeights
@@ -659,6 +678,7 @@ class SettingsManager: ObservableObject {
             self.sidebarPaneAssignments = sidebarPaneAssignments
             self.fileTreeMode = fileTreeMode
             self.vaultPaths = vaultPaths
+            self.lastNoteFolderPerVault = lastNoteFolderPerVault
             self.vaultPath = nil  // New format doesn't use legacy field
         }
 
@@ -671,6 +691,7 @@ class SettingsManager: ObservableObject {
             sidebarPaneAssignments = try container.decodeIfPresent([String: [SidebarPaneItem]].self, forKey: .sidebarPaneAssignments)
             fileTreeMode = try container.decodeIfPresent(String.self, forKey: .fileTreeMode)
             vaultPaths = try container.decodeIfPresent([String].self, forKey: .vaultPaths)
+            lastNoteFolderPerVault = try container.decodeIfPresent([String: String].self, forKey: .lastNoteFolderPerVault)
             vaultPath = try container.decodeIfPresent(String.self, forKey: .vaultPath)
         }
     }
@@ -716,6 +737,7 @@ class SettingsManager: ObservableObject {
         self.editorFontSize = 15
         self.editorLineHeight = 1.6
         self.vaultPaths = []
+        self.lastNoteFolderPerVault = [:]
         self.respectGitignore = true
         self.activeThemeName = "Synapse (Dark)"
         self.customThemes = []
@@ -772,6 +794,7 @@ class SettingsManager: ObservableObject {
         self.editorFontSize = 15
         self.editorLineHeight = 1.6
         self.vaultPaths = []
+        self.lastNoteFolderPerVault = [:]
         self.respectGitignore = true
         self.activeThemeName = "Synapse (Dark)"
         self.customThemes = []
@@ -975,6 +998,7 @@ class SettingsManager: ObservableObject {
         } else {
             vaultPaths = []
         }
+        lastNoteFolderPerVault = globalConfig?.lastNoteFolderPerVault ?? [:]
     }
 
     func reloadFromDisk() {
@@ -1149,6 +1173,7 @@ class SettingsManager: ObservableObject {
         let vaultRootURL: URL?
         let globalConfigPath: String?
         let vaultPaths: [String]
+        let lastNoteFolderPerVault: [String: String]
         let respectGitignore: Bool
         let activeThemeName: String
         let customThemes: [AppTheme]
@@ -1185,6 +1210,7 @@ class SettingsManager: ObservableObject {
             vaultRootURL          = s.vaultRootURL
             globalConfigPath      = s.globalConfigPath
             vaultPaths            = s.vaultPaths
+            lastNoteFolderPerVault = s.lastNoteFolderPerVault
             respectGitignore      = s.respectGitignore
             activeThemeName       = s.activeThemeName
             customThemes          = s.customThemes
@@ -1210,7 +1236,8 @@ class SettingsManager: ObservableObject {
                 collapsedSidebarIDs: collapsedSidebarIDs.isEmpty ? nil : collapsedSidebarIDs,
                 sidebarPaneAssignments: sidebarPaneAssignments,
                 fileTreeMode: fileTreeMode.rawValue,
-                vaultPaths: vaultPaths.isEmpty ? nil : vaultPaths
+                vaultPaths: vaultPaths.isEmpty ? nil : vaultPaths,
+                lastNoteFolderPerVault: lastNoteFolderPerVault.isEmpty ? nil : lastNoteFolderPerVault
             )
             guard let globalYAML = try? YAMLEncoder().encode(globalConfig) else { return }
             let globalURL = URL(fileURLWithPath: globalConfigPath)
