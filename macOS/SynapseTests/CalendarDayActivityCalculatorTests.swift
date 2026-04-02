@@ -101,30 +101,38 @@ final class CalendarDayActivityCalculatorTests: XCTestCase {
         let day1 = Date(timeIntervalSince1970: 1_700_000_000)
         let day2 = Date(timeIntervalSince1970: 1_700_086_400)
         let day3 = Date(timeIntervalSince1970: 1_700_172_800)
+        let day4 = Date(timeIntervalSince1970: 1_700_259_200)
+        let day5 = Date(timeIntervalSince1970: 1_700_345_600)
 
-        // Day 2 has highest activity (10), so it should get close to max size
-        // Day 1 has 5, Day 3 has 2
-        // With logarithmic scaling, differences are compressed
+        // More data points so 95th percentile isn't the absolute max
+        // 95th percentile of [1, 2, 5, 10, 50] will be around 10 (index 3)
+        // With referenceMax=10: day5(50) and day4(10) get maxSize, day3(5) gets mid
         let activityMap: [Date: Int] = [
-            calendar.startOfDay(for: day1): 5,
-            calendar.startOfDay(for: day2): 10,
-            calendar.startOfDay(for: day3): 2
+            calendar.startOfDay(for: day1): 1,
+            calendar.startOfDay(for: day2): 2,
+            calendar.startOfDay(for: day3): 5,
+            calendar.startOfDay(for: day4): 10,
+            calendar.startOfDay(for: day5): 50
         ]
 
         let maxSize: CGFloat = 20.0
         let minSize: CGFloat = 8.0
 
+        let day5Size = sut.badgeSize(for: day5, in: activityMap, maxSize: maxSize, minSize: minSize)
+        let day4Size = sut.badgeSize(for: day4, in: activityMap, maxSize: maxSize, minSize: minSize)
+        let day3Size = sut.badgeSize(for: day3, in: activityMap, maxSize: maxSize, minSize: minSize)
         let day2Size = sut.badgeSize(for: day2, in: activityMap, maxSize: maxSize, minSize: minSize)
         let day1Size = sut.badgeSize(for: day1, in: activityMap, maxSize: maxSize, minSize: minSize)
-        let day3Size = sut.badgeSize(for: day3, in: activityMap, maxSize: maxSize, minSize: minSize)
 
-        // Day 2 (highest) should be close to max
-        XCTAssertGreaterThan(day2Size, 15)
-        // Day 1 should be mid-range
-        XCTAssertGreaterThan(day1Size, day3Size)
-        XCTAssertLessThan(day1Size, day2Size)
-        // Day 3 should be at least minSize
-        XCTAssertGreaterThanOrEqual(day3Size, minSize)
+        // Day 5 (outlier 50) and Day 4 (at 95th percentile) should be at max
+        XCTAssertEqual(day5Size, maxSize, accuracy: 0.01)
+        XCTAssertEqual(day4Size, maxSize, accuracy: 0.01)
+        // Day 3 (5 notes) should be mid-range: smaller than max, larger than day2
+        XCTAssertLessThan(day3Size, maxSize)
+        XCTAssertGreaterThan(day3Size, day2Size)
+        // Day 2 should be larger than day1 (minimum)
+        XCTAssertGreaterThan(day2Size, minSize)
+        XCTAssertGreaterThanOrEqual(day1Size, minSize)
     }
 
     func test_badgeSize_respectsMaxSizeCap() {
