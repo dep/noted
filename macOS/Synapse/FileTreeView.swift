@@ -225,6 +225,12 @@ struct FileTreeView: View {
                 let dir = appState.targetDirectoryForNewNote ?? appState.targetDirectoryForTemplate ?? appState.rootURL
                 presentCreateNote(in: dir)
             }
+            .onChange(of: appState.isNewFolderPromptRequested) { _, requested in
+                guard requested else { return }
+                appState.isNewFolderPromptRequested = false
+                let dir = appState.targetDirectoryForTemplate ?? appState.rootURL
+                presentCreateFolder(in: dir)
+            }
             .sheet(item: $editorAction) { action in
                 BrowserItemEditorSheet(action: action) { submittedName, selectedFolder in
                     handleEditorSubmit(action: action, submittedName: submittedName, selectedFolder: selectedFolder)
@@ -429,7 +435,7 @@ struct FileTreeView: View {
                             appState.sortCriterion = criterion
                             appState.sortAscending = true
                         }
-                        refresh()
+                        refreshWithoutNavigation()
                     }) {
                         Text(criterion.rawValue)
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -450,7 +456,7 @@ struct FileTreeView: View {
 
             Button(action: {
                 appState.sortAscending.toggle()
-                refresh()
+                refreshWithoutNavigation()
             }) {
                 Image(systemName: appState.sortAscending ? "arrow.up" : "arrow.down")
                     .font(.system(size: 11, weight: .semibold))
@@ -586,14 +592,18 @@ struct FileTreeView: View {
                             },
                             setDragTarget: { targeted in
                                 dragOverFolderURL = targeted ? url : nil
-                            }
+                            },
+                            onRename: { presentRename(for: url, isDirectory: true) },
+                            onDelete: { presentDelete(for: url, isDirectory: true) }
                         )
                     } else {
                         FlatFileRow(
                             fileURL: url,
                             isSelected: appState.selectedFile == url,
                             onTap: { appState.openFile(url) },
-                            onCmdTap: { appState.openFileInNewTab(url) }
+                            onCmdTap: { appState.openFileInNewTab(url) },
+                            onRename: { presentRename(for: url, isDirectory: false) },
+                            onDelete: { presentDelete(for: url, isDirectory: false) }
                         )
                     }
                 }
@@ -628,6 +638,18 @@ struct FileTreeView: View {
         childrenCache = [:]
         nodes = buildFileTreeLevel(at: root, sortCriterion: appState.sortCriterion, ascending: appState.sortAscending, settings: settings)
         expandPath(to: appState.selectedFile)
+    }
+
+    /// Refreshes the file tree without navigating to the selected file.
+    /// Used when sorting changes to avoid snapping back to the selected file.
+    private func refreshWithoutNavigation() {
+        guard let root = appState.rootURL else {
+            nodes = []
+            return
+        }
+        childrenCache = [:]
+        nodes = buildFileTreeLevel(at: root, sortCriterion: appState.sortCriterion, ascending: appState.sortAscending, settings: settings)
+        // Intentionally NOT calling expandPath to preserve current scroll position
     }
 
     /// Returns cached children for a directory, or kicks off an async load and returns nil.
@@ -707,6 +729,12 @@ struct FileTreeView: View {
         }
 
         expandedDirs.insert(root)
+
+        // Sync flat folder navigator to show the folder containing the selected file (Issue #200)
+        let parentFolder = file.deletingLastPathComponent()
+        if parentFolder.standardizedFileURL.path.hasPrefix(rootPath) {
+            appState.flatNavigatorCurrentDirectory = parentFolder
+        }
     }
 
     private func revealSelection(with proxy: ScrollViewProxy, animated: Bool = true) {
@@ -1381,13 +1409,15 @@ private struct BrowserItemEditorSheet: View {
                     }
                 }
             }
-        }
 
-        HStack {
             Spacer()
-            Button("Cancel") { dismiss() }
-            Button(action.buttonTitle, action: performSubmit)
-                .keyboardShortcut(.defaultAction)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button(action.buttonTitle, action: performSubmit)
+                    .keyboardShortcut(.defaultAction)
+            }
         }
         .padding(20)
         .frame(width: 340)
@@ -1462,21 +1492,37 @@ private struct FlatNavigatorBackButton: View {
 
 /// Row displaying a folder in the flat navigator - tap to navigate into.
 private struct FlatFolderRow: View {
+    @EnvironmentObject var appState: AppState
     let folderURL: URL
     let isSelected: Bool
     let isDragTarget: Bool
     let onTap: () -> Void
     let onDrop: ([NSItemProvider]) -> Bool
     let setDragTarget: (Bool) -> Void
+    let onRename: () -> Void
+    let onDelete: () -> Void
 
     var folderName: String { folderURL.lastPathComponent }
 
+    private var rowBackground: some View {
+        let color: Color = isDragTarget 
+            ? SynapseTheme.accent.opacity(0.18)
+            : (isSelected ? SynapseTheme.accentSoft : SynapseTheme.row)
+        return RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(color)
+    }
+
+    private var rowOverlay: some View {
+        Group {
+            if isDragTarget {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(SynapseTheme.accent, lineWidth: 1.5)
+            }
+        }
+    }
+
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 8, weight: .bold))
-                .frame(width: 10)
-                .foregroundStyle(SynapseTheme.textMuted)
             Image(systemName: "folder.fill")
                 .foregroundStyle(SynapseTheme.accent)
             Text(folderName)
@@ -1488,18 +1534,8 @@ private struct FlatFolderRow: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isDragTarget
-                      ? SynapseTheme.accent.opacity(0.18)
-                      : isSelected ? SynapseTheme.accentSoft : SynapseTheme.row)
-        }
-        .overlay {
-            if isDragTarget {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(SynapseTheme.accent, lineWidth: 1.5)
-            }
-        }
+        .background(rowBackground)
+        .overlay(rowOverlay)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
         .onHover { hovering in
@@ -1513,15 +1549,34 @@ private struct FlatFolderRow: View {
             ),
             perform: onDrop
         )
+        .contextMenu {
+            Button("New Note") { appState.presentRootNoteSheet(in: folderURL) }
+            Button("New Folder") { 
+                appState.targetDirectoryForTemplate = folderURL
+                appState.isNewFolderPromptRequested = true 
+            }
+            Divider()
+            if appState.isPinned(folderURL) {
+                Button("Unpin") { appState.unpinItem(folderURL) }
+            } else {
+                Button("Pin") { appState.pinItem(folderURL) }
+            }
+            Divider()
+            Button("Rename") { onRename() }
+            Button("Delete", role: .destructive) { onDelete() }
+        }
     }
 }
 
 /// Row displaying a file in the flat navigator.
 private struct FlatFileRow: View {
+    @EnvironmentObject var appState: AppState
     let fileURL: URL
     let isSelected: Bool
     let onTap: () -> Void
     let onCmdTap: () -> Void
+    let onRename: () -> Void
+    let onDelete: () -> Void
 
     var fileName: String { fileURL.deletingPathExtension().lastPathComponent }
     var isMarkdown: Bool {
@@ -1532,9 +1587,9 @@ private struct FlatFileRow: View {
     var body: some View {
         Button(action: handleTap) {
             HStack(spacing: 6) {
-                Spacer().frame(width: 10) // Indent to align with folders
+                // Files now align with folders (no extra indent needed after removing chevrons)
                 Image(systemName: isMarkdown ? "doc.text.fill" : "doc.text")
-                    .foregroundStyle(isMarkdown ? SynapseTheme.accent : SynapseTheme.textMuted)
+                    .foregroundStyle(isMarkdown ? SynapseTheme.success : SynapseTheme.textMuted)
                     .opacity(0.8)
                 Text(fileName)
                     .lineLimit(1)
@@ -1557,6 +1612,18 @@ private struct FlatFileRow: View {
         }
         .onDrag {
             sidebarFileItemProvider(for: fileURL)
+        }
+        .contextMenu {
+            Button("Open in Split") { appState.openFileInSplit(fileURL) }
+            Divider()
+            if appState.isPinned(fileURL) {
+                Button("Unpin") { appState.unpinItem(fileURL) }
+            } else {
+                Button("Pin") { appState.pinItem(fileURL) }
+            }
+            Divider()
+            Button("Rename") { onRename() }
+            Button("Delete", role: .destructive) { onDelete() }
         }
     }
 

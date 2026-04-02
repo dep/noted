@@ -209,6 +209,7 @@ class AppState: ObservableObject {
     @Published var canGoForward: Bool = false
     @Published var isCommandPalettePresented: Bool = false
     @Published var isNewNotePromptRequested: Bool = false
+    @Published var isNewFolderPromptRequested: Bool = false
     @Published var pendingTemplateURL: URL? = nil
     @Published var pendingCursorPosition: Int? = nil
     @Published var pendingCursorRange: NSRange? = nil
@@ -3410,13 +3411,27 @@ class AppState: ObservableObject {
             items.append((url, isDir, name))
         }
         
-        // Sort: directories first, then by name
-        items.sort {
-            if $0.isDirectory != $1.isDirectory {
-                return $0.isDirectory // Directories first
+        // Sort based on the current sort criterion and direction
+        items.sort(by: { (a, b) -> Bool in
+            // Always keep directories before files regardless of sort criterion
+            if a.isDirectory != b.isDirectory {
+                return a.isDirectory // Directories first
             }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+            
+            // Both items are same type (both dirs or both files), apply selected sort
+            let comparison: ComparisonResult
+            switch sortCriterion {
+            case .name:
+                comparison = a.name.localizedCaseInsensitiveCompare(b.name)
+            case .modified:
+                let date1 = (try? a.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let date2 = (try? b.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                comparison = date1.compare(date2)
+            }
+            
+            // Apply ascending/descending
+            return sortAscending ? (comparison == .orderedAscending) : (comparison == .orderedDescending)
+        })
         
         return items.map { $0.url }
     }
