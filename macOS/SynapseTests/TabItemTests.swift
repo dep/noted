@@ -30,6 +30,14 @@ final class TabItemTests: XCTestCase {
         XCTAssertEqual(TabItem.graph.displayName, "Graph")
     }
 
+    func test_displayName_dateTab_returnsYYYYMMDD() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(year: 2026, month: 4, day: 3)
+        let date = calendar.date(from: components)!
+        XCTAssertEqual(TabItem.date(date).displayName, "2026-04-03")
+    }
+
     // MARK: - isFile
 
     func test_isFile_fileTab_returnsTrue() {
@@ -75,6 +83,37 @@ final class TabItemTests: XCTestCase {
         XCTAssertFalse(TabItem.tag("swift").isGraph)
     }
 
+    // MARK: - isDate
+
+    func test_isDate_dateTab_returnsTrue() {
+        let date = Date(timeIntervalSince1970: 0)
+        XCTAssertTrue(TabItem.date(date).isDate)
+    }
+
+    func test_isDate_fileTab_returnsFalse() {
+        let tab = TabItem.file(URL(fileURLWithPath: "/vault/note.md"))
+        XCTAssertFalse(tab.isDate)
+    }
+
+    func test_isDate_graphTab_returnsFalse() {
+        XCTAssertFalse(TabItem.graph.isDate)
+    }
+
+    // MARK: - dateValue
+
+    func test_dateValue_dateTab_returnsAssociatedDate() {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertEqual(TabItem.date(date).dateValue, date)
+    }
+
+    func test_dateValue_fileTab_returnsNil() {
+        XCTAssertNil(TabItem.file(URL(fileURLWithPath: "/vault/note.md")).dateValue)
+    }
+
+    func test_dateValue_tagTab_returnsNil() {
+        XCTAssertNil(TabItem.tag("swift").dateValue)
+    }
+
     // MARK: - fileURL
 
     func test_fileURL_fileTab_returnsAssociatedURL() {
@@ -88,6 +127,10 @@ final class TabItemTests: XCTestCase {
 
     func test_fileURL_graphTab_returnsNil() {
         XCTAssertNil(TabItem.graph.fileURL)
+    }
+
+    func test_fileURL_dateTab_returnsNil() {
+        XCTAssertNil(TabItem.date(Date()).fileURL)
     }
 
     // MARK: - tagName
@@ -107,6 +150,10 @@ final class TabItemTests: XCTestCase {
 
     func test_tagName_graphTab_returnsNil() {
         XCTAssertNil(TabItem.graph.tagName)
+    }
+
+    func test_tagName_dateTab_returnsNil() {
+        XCTAssertNil(TabItem.date(Date()).tagName)
     }
 
     // MARK: - Hashable / Equatable
@@ -134,6 +181,17 @@ final class TabItemTests: XCTestCase {
         XCTAssertEqual(TabItem.graph, TabItem.graph)
     }
 
+    func test_dateTabEquality_sameInstant_isEqual() {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertEqual(TabItem.date(date), TabItem.date(date))
+    }
+
+    func test_dateTabEquality_differentInstant_isNotEqual() {
+        let a = TabItem.date(Date(timeIntervalSince1970: 0))
+        let b = TabItem.date(Date(timeIntervalSince1970: 1))
+        XCTAssertNotEqual(a, b)
+    }
+
     func test_differentTabTypes_fileVsGraph_areNotEqual() {
         let url = URL(fileURLWithPath: "/vault/note.md")
         XCTAssertNotEqual(TabItem.file(url), TabItem.graph)
@@ -146,6 +204,10 @@ final class TabItemTests: XCTestCase {
     func test_differentTabTypes_fileVsTag_areNotEqual() {
         let url = URL(fileURLWithPath: "/vault/note.md")
         XCTAssertNotEqual(TabItem.file(url), TabItem.tag("swift"))
+    }
+
+    func test_differentTabTypes_dateVsGraph_areNotEqual() {
+        XCTAssertNotEqual(TabItem.date(Date()), TabItem.graph)
     }
 
     func test_tabItem_usableInSet_deduplicatesCorrectly() {
