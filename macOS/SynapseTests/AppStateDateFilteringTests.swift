@@ -184,7 +184,7 @@ final class AppStateDateFilteringTests: XCTestCase {
         XCTAssertFalse(notes.contains(note1))
     }
 
-    func test_notesModifiedOnDate_createdAndModifiedSameDay_includesIfActuallyModified() {
+    func test_notesModifiedOnDate_createdSameDay_excludedEvenIfEditedLaterThatDay() {
         let day1 = date(year: 2024, month: 1, day: 15)
 
         // Note created on day1 and modified later on day1 (different timestamp)
@@ -195,11 +195,13 @@ final class AppStateDateFilteringTests: XCTestCase {
 
         sut.refreshAllFiles()
 
-        let notesDay1 = sut.notesModifiedOnDate(day1)
+        let createdDay1 = sut.notesCreatedOnDate(day1)
+        let modifiedDay1 = sut.notesModifiedOnDate(day1)
 
-        // Should show in Modified because it was modified after creation (different timestamps)
-        XCTAssertEqual(notesDay1.count, 1)
-        XCTAssertTrue(notesDay1.contains(note1))
+        // Created list only; Modified excludes same-calendar-day creation
+        XCTAssertEqual(createdDay1.count, 1)
+        XCTAssertTrue(createdDay1.contains(note1))
+        XCTAssertTrue(modifiedDay1.isEmpty)
     }
 
     func test_notesModifiedOnDate_sameTimestampAsCreation_excluded() {
@@ -218,7 +220,7 @@ final class AppStateDateFilteringTests: XCTestCase {
 
     // MARK: - Combined Results
 
-    func test_notesCreatedAndModifiedOnDate_sameNoteCanAppearInBoth() {
+    func test_notesCreatedAndModifiedOnDate_sameNoteCanAppearInBothWhenModifiedLaterDay() {
         let createdDate = date(year: 2024, month: 1, day: 10)
         let modifiedDate = date(year: 2024, month: 1, day: 15)
 
@@ -229,7 +231,7 @@ final class AppStateDateFilteringTests: XCTestCase {
         let createdNotes = sut.notesCreatedOnDate(createdDate)
         let modifiedNotes = sut.notesModifiedOnDate(modifiedDate)
 
-        // Same note can appear in both lists
+        // Created on day 10; modified on day 15 → appears under Created (10) and Modified (15)
         XCTAssertTrue(createdNotes.contains(note))
         XCTAssertTrue(modifiedNotes.contains(note))
     }
