@@ -1304,8 +1304,9 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Returns all notes modified on a specific date (including notes modified after creation
-    /// on the same day they were created).
+    /// Returns notes modified on a specific calendar day whose **creation** day is **before** that day.
+    /// Same-day-created notes are omitted here so the date page’s Modified list does not duplicate
+    /// items already listed under Created.
     /// Results are sorted descending by modification date (newest first).
     func notesModifiedOnDate(_ date: Date) -> [URL] {
         let calendar = Calendar.current
@@ -1319,10 +1320,11 @@ class AppState: ObservableObject {
             }
 
             let modificationDay = calendar.startOfDay(for: modificationDate)
-            
-            // Only count if modified on target day AND modification time is strictly after creation
-            // This includes notes modified later on the same day they were created
-            return modificationDay == targetDay && modificationDate > creationDate
+            let creationDay = calendar.startOfDay(for: creationDate)
+
+            return modificationDay == targetDay
+                && modificationDate > creationDate
+                && creationDay < targetDay
         }
 
         // Sort by modification date descending (newest first)
