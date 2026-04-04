@@ -4902,6 +4902,13 @@ final class ImageViewerWindowController: NSWindowController {
     private func loadImage() {
         guard let imageURL = imageURL else { return }
 
+        // Handle remote URLs (http/https)
+        if imageURL.scheme?.lowercased() == "http" || imageURL.scheme?.lowercased() == "https" {
+            downloadRemoteImage(from: imageURL)
+            return
+        }
+
+        // Handle local file URLs
         let fileManager = FileManager.default
         if !fileManager.fileExists(atPath: imageURL.path) {
             print("Image file does not exist at: \(imageURL.path)")
@@ -4922,6 +4929,32 @@ final class ImageViewerWindowController: NSWindowController {
                 print("Image loaded successfully: \(image.size.width)x\(image.size.height)")
             }
         }
+    }
+
+    private func downloadRemoteImage(from url: URL) {
+        print("Downloading remote image from: \(url.absoluteString)")
+
+        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            if let error = error {
+                print("Failed to download image: \(error.localizedDescription)")
+                return
+            }
+
+            guard let data = data, let image = NSImage(data: data) else {
+                print("Failed to create image from downloaded data")
+                return
+            }
+
+            DispatchQueue.main.async {
+                self?.imageSize = image.size
+                self?.imageView.image = image
+                self?.updateImageViewSize()
+                self?.fitImageToScreen()
+                print("Remote image loaded successfully: \(image.size.width)x\(image.size.height)")
+            }
+        }
+
+        task.resume()
     }
 
     private func updateImageViewSize() {

@@ -40,7 +40,7 @@ struct FolderIcon: Identifiable, Equatable {
 }
 
 extension FolderIcon {
-    /// 20 outlined SF Symbol icons.
+    /// Outlined SF Symbols available for folder customization.
     static let set: [FolderIcon] = [
         FolderIcon(id: "star",        label: "Star",        symbolName: "star"),
         FolderIcon(id: "heart",       label: "Heart",       symbolName: "heart"),
@@ -67,6 +67,7 @@ extension FolderIcon {
         FolderIcon(id: "people",      label: "People",      symbolName: "person.2"),
         FolderIcon(id: "person",      label: "Person",      symbolName: "person"),
         FolderIcon(id: "calendar",    label: "Calendar",    symbolName: "calendar"),
+        FolderIcon(id: "chat",        label: "Chat bubble", symbolName: "bubble.left"),
         FolderIcon(id: "wrench",      label: "Wrench",      symbolName: "wrench"),
     ]
 
