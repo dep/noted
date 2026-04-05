@@ -1,0 +1,8 @@
+Rebuild, Quit, and Restart so I can test!
+
+## macOS Build and Relaunch
+
+Execute this command using the bash tool:
+```bash
+pkill -9 "<AppName>" || true && sleep 1 && xcodegen generate && xcodebuild -project "<AppName>.xcodeproj" -scheme "<AppName>" -destination "platform=macOS" build && for app in ~/Library/Developer/Xcode/DerivedData/<AppName>-*/Build/Products/Debug/<AppName>.app; do [ -e "$app" ] && open "$app" && break; done
+```

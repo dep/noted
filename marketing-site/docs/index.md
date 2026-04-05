@@ -222,3 +222,6 @@ If Synapse saves you money on a notes app subscription or just sparks a little j
 ## Additional Documentation
 
 - [Markdown Guide and More Tips & Tricks](./markdown.md)
+- [Support](./support.md) — contact, GitHub issues, and feedback
+- [Privacy Policy](./privacy-policy.md)
+- [Terms of Service](./terms-of-service.md)

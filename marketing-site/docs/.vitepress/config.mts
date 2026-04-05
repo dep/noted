@@ -7,7 +7,15 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: 'Guide', link: '/' }
+      { text: 'Guide', link: '/' },
+      { text: 'Support', link: '/support' },
+      {
+        text: 'Legal',
+        items: [
+          { text: 'Privacy Policy', link: '/privacy-policy' },
+          { text: 'Terms of Service', link: '/terms-of-service' }
+        ]
+      }
     ],
 
     // Enable the sidebar and configure it
@@ -29,6 +37,14 @@ export default defineConfig({
         text: 'Documentation',
         items: [
           { text: 'Markdown Guide', link: '/markdown' }
+        ]
+      },
+      {
+        text: 'Legal & support',
+        items: [
+          { text: 'Support', link: '/support' },
+          { text: 'Privacy Policy', link: '/privacy-policy' },
+          { text: 'Terms of Service', link: '/terms-of-service' }
         ]
       }
     ],
