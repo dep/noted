@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dnnypck.mobile"
+      "bundleIdentifier": "com.dnnypck.synapse"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +25,7 @@
       },
       "softwareKeyboardLayoutMode": "resize",
       "predictiveBackGestureEnabled": false,
-      "package": "com.dnnypck.mobile"
+      "package": "com.dnnypck.synapse"
     },
     "web": {
       "favicon": "./assets/favicon.png"

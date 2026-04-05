@@ -35,7 +35,7 @@ adb install -r mobile/android/app/build/outputs/apk/release/app-release.apk
 ### Launch the app
 
 ```bash
-adb shell monkey -p com.dnnypck.mobile -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.dnnypck.synapse -c android.intent.category.LAUNCHER 1
 ```
 
 Or launch manually from your app drawer.
@@ -63,7 +63,7 @@ Build, install, and launch:
 cd mobile/android && \
   ./gradlew assembleRelease && \
   adb install -r app/build/outputs/apk/release/app-release.apk && \
-  adb shell monkey -p com.dnnypck.mobile -c android.intent.category.LAUNCHER 1
+  adb shell monkey -p com.dnnypck.synapse -c android.intent.category.LAUNCHER 1
 ```
 
 ## Step-by-Step
@@ -115,7 +115,7 @@ adb install -r mobile/android/app/build/outputs/apk/release/app-release.apk
 
 **USB-connected:**
 ```bash
-adb shell monkey -p com.dnnypck.mobile -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.dnnypck.synapse -c android.intent.category.LAUNCHER 1
 ```
 
 **Any device:**
@@ -178,7 +178,7 @@ Success
 - Try `adb install -r -d` to allow downgrade
 
 **"App not installed" error:**
-- Try uninstalling the old version first: `adb uninstall com.dnnypck.mobile`
+- Try uninstalling the old version first: `adb uninstall com.dnnypck.synapse`
 - Or use `-r` flag to reinstall: `adb install -r app-release.apk`
 
 ## Alternative: EAS Build

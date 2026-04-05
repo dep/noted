@@ -48,7 +48,7 @@ describe('GitService', () => {
           'git_credentials',
           expect.any(String)
         );
-        
+
         const storedData = JSON.parse(
           (AsyncStorage.setItem as jest.Mock).mock.calls[0][1]
         );
@@ -59,8 +59,8 @@ describe('GitService', () => {
         // Mock AsyncStorage.getItem to return accumulated credentials
         let storedCredentials: any = {};
         (AsyncStorage.getItem as jest.Mock).mockImplementation(() => {
-          return Promise.resolve(Object.keys(storedCredentials).length > 0 
-            ? JSON.stringify(storedCredentials) 
+          return Promise.resolve(Object.keys(storedCredentials).length > 0
+            ? JSON.stringify(storedCredentials)
             : null);
         });
         (AsyncStorage.setItem as jest.Mock).mockImplementation((key: string, value: string) => {
@@ -174,7 +174,7 @@ describe('GitService', () => {
       const repoUrl = 'https://gitlab.com/test/repo.git';
       const localPath = '/repos/test-repo';
       const credentials = { username: 'testuser', token: 'testtoken' };
-      
+
       (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce(
         JSON.stringify({ [repoUrl]: credentials })
       );
@@ -191,7 +191,7 @@ describe('GitService', () => {
 
     it('should expose Node-style ENOENT errors from fs adapter', async () => {
       const repoUrl = 'https://gitlab.com/test/repo.git';
-      const localPath = 'file:///data/user/0/com.dnnypck.mobile/files/vault';
+      const localPath = 'file:///data/user/0/com.dnnypck.synapse/files/vault';
 
       (FileSystem.getInfoAsync as jest.Mock).mockResolvedValueOnce({
         exists: false,
@@ -199,24 +199,24 @@ describe('GitService', () => {
       });
 
       (git.clone as jest.Mock).mockImplementationOnce(async ({ fs }: any) => {
-        await fs.promises.stat('file:/data/user/0/com.dnnypck.mobile/files/vault/.git/config');
+        await fs.promises.stat('file:/data/user/0/com.dnnypck.synapse/files/vault/.git/config');
       });
 
       await expect(GitService.clone(repoUrl, localPath)).rejects.toMatchObject({
         originalError: expect.objectContaining({
           code: 'ENOENT',
-          path: 'file:/data/user/0/com.dnnypck.mobile/files/vault/.git/config',
+          path: 'file:/data/user/0/com.dnnypck.synapse/files/vault/.git/config',
         }),
       });
     });
 
     it('should create parent directories before writing nested git files', async () => {
       const repoUrl = 'https://gitlab.com/test/repo.git';
-      const localPath = 'file:///data/user/0/com.dnnypck.mobile/files/vault/agent-sync';
+      const localPath = 'file:///data/user/0/com.dnnypck.synapse/files/vault/agent-sync';
 
       (git.clone as jest.Mock).mockImplementationOnce(async ({ fs }: any) => {
         await fs.promises.writeFile(
-          'file:/data/user/0/com.dnnypck.mobile/files/vault/agent-sync/.git/config',
+          'file:/data/user/0/com.dnnypck.synapse/files/vault/agent-sync/.git/config',
           '[core]\nrepositoryformatversion = 0\n'
         );
       });
@@ -224,7 +224,7 @@ describe('GitService', () => {
       await GitService.clone(repoUrl, localPath);
 
       expect(FileSystem.makeDirectoryAsync).toHaveBeenCalledWith(
-        'file:///data/user/0/com.dnnypck.mobile/files/vault/agent-sync/.git',
+        'file:///data/user/0/com.dnnypck.synapse/files/vault/agent-sync/.git',
         { intermediates: true }
       );
       expect(FileSystem.writeAsStringAsync).toHaveBeenCalled();
@@ -233,7 +233,7 @@ describe('GitService', () => {
     it('should throw GitError on authentication failure', async () => {
       const repoUrl = 'https://gitlab.com/test/repo.git';
       const localPath = '/repos/test-repo';
-      
+
       const authError = new Error('HTTP Error: 401 Unauthorized');
       (git.clone as jest.Mock)
         .mockRejectedValueOnce(authError)
@@ -246,7 +246,7 @@ describe('GitService', () => {
     it('should throw GitError on network error', async () => {
       const repoUrl = 'https://gitlab.com/test/repo.git';
       const localPath = '/repos/test-repo';
-      
+
       (git.clone as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
 
       await expect(GitService.clone(repoUrl, localPath)).rejects.toThrow(GitError);
@@ -256,7 +256,7 @@ describe('GitService', () => {
   describe('pull', () => {
     it('should pull latest changes with rebase strategy', async () => {
       const localPath = '/repos/test-repo';
-      
+
       (git.pull as jest.Mock).mockResolvedValueOnce(undefined);
 
       await GitService.pull(localPath);
@@ -295,7 +295,7 @@ describe('GitService', () => {
 
     it('should throw GitError on network error', async () => {
       const localPath = '/repos/test-repo';
-      
+
       (git.pull as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
 
       await expect(GitService.pull(localPath)).rejects.toThrow(GitError);
@@ -306,7 +306,7 @@ describe('GitService', () => {
     it('should stage all changes and commit with auto-generated message', async () => {
       const localPath = '/repos/test-repo';
       const timestamp = new Date().toISOString();
-      
+
       (git.statusMatrix as jest.Mock).mockResolvedValueOnce([
         ['file1.md', 0, 2, 0], // modified
         ['file2.md', 0, 0, 2], // deleted
@@ -341,7 +341,7 @@ describe('GitService', () => {
 
     it('should return null when there are no changes to commit', async () => {
       const localPath = '/repos/test-repo';
-      
+
       (git.statusMatrix as jest.Mock).mockResolvedValueOnce([
         ['file1.md', 1, 1, 1], // unchanged
       ]);
@@ -357,15 +357,15 @@ describe('GitService', () => {
     it('should push commits to remote', async () => {
       const localPath = '/repos/test-repo';
       const remoteUrl = 'https://github.com/test/repo.git';
-      
+
       (git.getConfig as jest.Mock).mockResolvedValueOnce({ value: remoteUrl });
       (git.currentBranch as jest.Mock).mockResolvedValueOnce('main');
-      
+
       // Mock credentials for the remote
       (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce(
         JSON.stringify({ [remoteUrl]: { username: 'testuser', token: 'testtoken' } })
       );
-      
+
       (git.push as jest.Mock).mockResolvedValueOnce(undefined);
 
       await GitService.push(localPath);
@@ -384,7 +384,7 @@ describe('GitService', () => {
 
     it('should throw GitError on authentication failure', async () => {
       const localPath = '/repos/test-repo';
-      
+
       (git.push as jest.Mock).mockRejectedValueOnce(new Error('HTTP Error: 401 Unauthorized'));
 
       await expect(GitService.push(localPath)).rejects.toThrow(GitError);
@@ -601,7 +601,7 @@ describe('GitService', () => {
 
     it('should pull then push', async () => {
       const localPath = '/repos/test-repo';
-      
+
       (git.pull as jest.Mock).mockResolvedValueOnce(undefined);
       (git.statusMatrix as jest.Mock).mockResolvedValueOnce([
         ['file1.md', 0, 2, 0],
@@ -625,7 +625,7 @@ describe('GitService', () => {
 
     it('should handle nothing to commit scenario', async () => {
       const localPath = '/repos/test-repo';
-      
+
       (git.pull as jest.Mock).mockResolvedValueOnce(undefined);
       (git.statusMatrix as jest.Mock).mockResolvedValueOnce([
         ['file1.md', 1, 1, 1], // unchanged
@@ -784,7 +784,7 @@ describe('GitService', () => {
     describe('GitError', () => {
       it('should create error with specific type', () => {
         const error = new GitError('Auth failed', GitErrorType.AUTH_FAILURE);
-        
+
         expect(error.message).toBe('Auth failed');
         expect(error.type).toBe(GitErrorType.AUTH_FAILURE);
         expect(error).toBeInstanceOf(Error);
@@ -793,7 +793,7 @@ describe('GitService', () => {
       it('should include original error if provided', () => {
         const original = new Error('Original error');
         const error = new GitError('Auth failed', GitErrorType.AUTH_FAILURE, original);
-        
+
         expect(error.originalError).toBe(original);
       });
     });
@@ -803,7 +803,7 @@ describe('GitService', () => {
     describe('getStatus', () => {
       it('should return current repository status', async () => {
         const localPath = '/repos/test-repo';
-        
+
         (git.statusMatrix as jest.Mock).mockResolvedValueOnce([
           ['file1.md', 1, 1, 1], // unchanged
           ['file2.md', 0, 2, 0], // added (new file)
@@ -825,7 +825,7 @@ describe('GitService', () => {
     describe('hasChanges', () => {
       it('should return true when there are uncommitted changes', async () => {
         const localPath = '/repos/test-repo';
-        
+
         (git.statusMatrix as jest.Mock).mockResolvedValueOnce([
           ['file1.md', 1, 1, 1],
           ['file2.md', 0, 2, 0],
@@ -838,7 +838,7 @@ describe('GitService', () => {
 
       it('should return false when working directory is clean', async () => {
         const localPath = '/repos/test-repo';
-        
+
         (git.statusMatrix as jest.Mock).mockResolvedValueOnce([
           ['file1.md', 1, 1, 1],
         ]);
@@ -852,7 +852,7 @@ describe('GitService', () => {
     describe('isRepository', () => {
       it('should return true for valid git repository', async () => {
         const localPath = '/repos/test-repo';
-        
+
         (git.currentBranch as jest.Mock).mockResolvedValueOnce('main');
 
         const result = await GitService.isRepository(localPath);
@@ -862,7 +862,7 @@ describe('GitService', () => {
 
       it('should return false for non-git directory', async () => {
         const localPath = '/repos/test-repo';
-        
+
         (git.currentBranch as jest.Mock).mockRejectedValueOnce(new Error('Not a git repository'));
 
         const result = await GitService.isRepository(localPath);
