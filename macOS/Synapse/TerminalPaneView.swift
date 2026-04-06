@@ -1,6 +1,21 @@
 import SwiftUI
 import SwiftTerm
 
+/// Builds the first line sent to the embedded shell after launch (cd + optional on-boot command).
+/// Extracted for unit tests so space-escaping and command chaining stay correct without spinning up a PTY.
+enum LocalTerminalBootCommand {
+    static func initialSendLine(workingDirectory: String, onBootCommand: String?) -> String {
+        let escaped = workingDirectory.replacingOccurrences(of: " ", with: "\\ ")
+        let commandToRun: String
+        if let customCommand = onBootCommand, !customCommand.isEmpty {
+            commandToRun = "cd \(escaped) && \(customCommand)"
+        } else {
+            commandToRun = "cd \(escaped)"
+        }
+        return commandToRun + "\n"
+    }
+}
+
 struct LocalTerminalView: NSViewRepresentable {
     let workingDirectory: String
     let onBootCommand: String?
@@ -26,17 +41,10 @@ struct LocalTerminalView: NSViewRepresentable {
         )
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            let escaped = workingDirectory.replacingOccurrences(of: " ", with: "\\ ")
-
-            // Use on-boot command if set, otherwise just cd to project
-            let commandToRun: String
-            if let customCommand = onBootCommand, !customCommand.isEmpty {
-                commandToRun = "cd \(escaped) && \(customCommand)"
-            } else {
-                commandToRun = "cd \(escaped)"
-            }
-
-            terminal.send(txt: commandToRun + "\n")
+            terminal.send(txt: LocalTerminalBootCommand.initialSendLine(
+                workingDirectory: workingDirectory,
+                onBootCommand: onBootCommand
+            ))
 
             // Re-trigger setFrameSize after the initial SwiftUI layout pass so
             // SwiftTerm's processSizeChange runs with the real bounds and sends
