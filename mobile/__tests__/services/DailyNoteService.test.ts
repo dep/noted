@@ -38,7 +38,6 @@ jest.mock('../../src/services/SettingsStorage', () => ({
     getDailyNotesEnabled: jest.fn(),
     getDailyNotesFolder: jest.fn(),
     getDailyNotesTemplate: jest.fn(),
-    getDailyNotesOpenOnStartup: jest.fn(),
     getAllDailyNoteSettings: jest.fn(),
   },
 }));
@@ -59,12 +58,10 @@ describe('DailyNoteService', () => {
     mockedSettingsStorage.getDailyNotesEnabled.mockResolvedValue(true);
     mockedSettingsStorage.getDailyNotesFolder.mockResolvedValue('daily');
     mockedSettingsStorage.getDailyNotesTemplate.mockResolvedValue('');
-    mockedSettingsStorage.getDailyNotesOpenOnStartup.mockResolvedValue(false);
     mockedSettingsStorage.getAllDailyNoteSettings.mockResolvedValue({
       dailyNotesEnabled: true,
       dailyNotesFolder: 'daily',
       dailyNotesTemplate: '',
-      dailyNotesOpenOnStartup: false,
     });
   });
 
@@ -206,35 +203,6 @@ describe('DailyNoteService', () => {
       const result = await (DailyNoteService as any).applyTemplateVariables(template, pmDate);
       
       expect(result.content).toBe('PM');
-    });
-  });
-
-  describe('getDailyNoteStatus', () => {
-    it('should return false when daily notes disabled', async () => {
-      mockedSettingsStorage.getDailyNotesEnabled.mockResolvedValue(false);
-      mockedSettingsStorage.getDailyNotesOpenOnStartup.mockResolvedValue(true);
-      
-      const result = await DailyNoteService.getDailyNoteStatus();
-      
-      expect(result).toBe(false);
-    });
-
-    it('should return false when openOnStartup disabled', async () => {
-      mockedSettingsStorage.getDailyNotesEnabled.mockResolvedValue(true);
-      mockedSettingsStorage.getDailyNotesOpenOnStartup.mockResolvedValue(false);
-      
-      const result = await DailyNoteService.getDailyNoteStatus();
-      
-      expect(result).toBe(false);
-    });
-
-    it('should return true when both enabled and openOnStartup true', async () => {
-      mockedSettingsStorage.getDailyNotesEnabled.mockResolvedValue(true);
-      mockedSettingsStorage.getDailyNotesOpenOnStartup.mockResolvedValue(true);
-      
-      const result = await DailyNoteService.getDailyNoteStatus();
-      
-      expect(result).toBe(true);
     });
   });
 
