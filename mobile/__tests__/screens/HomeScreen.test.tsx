@@ -4,7 +4,6 @@ import { ThemeProvider } from '../../src/theme/ThemeContext';
 import { HomeScreen } from '../../src/screens/HomeScreen';
 import { GitService } from '../../src/services/gitService';
 import { OnboardingStorage } from '../../src/services/onboardingStorage';
-import { DailyNoteService } from '../../src/services/DailyNoteService';
 import { PinningStorage } from '../../src/services/PinningStorage';
 import { emitRepositoryRefresh } from '../../src/services/repositoryEvents';
 
@@ -17,13 +16,6 @@ jest.mock('../../src/services/gitService', () => ({
 jest.mock('../../src/services/onboardingStorage', () => ({
   OnboardingStorage: {
     getActiveRepositoryPath: jest.fn(),
-  },
-}));
-
-jest.mock('../../src/services/DailyNoteService', () => ({
-  DailyNoteService: {
-    getDailyNoteStatus: jest.fn(),
-    openTodayNote: jest.fn(),
   },
 }));
 
@@ -89,7 +81,6 @@ describe('HomeScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (OnboardingStorage.getActiveRepositoryPath as jest.Mock).mockResolvedValue('file:///vault/repo');
-    (DailyNoteService.getDailyNoteStatus as jest.Mock).mockResolvedValue(false);
     (PinningStorage.getPinnedItems as jest.Mock).mockResolvedValue([]);
     (GitService.refreshRemote as jest.Mock).mockResolvedValue(undefined);
     (emitRepositoryRefresh as jest.Mock).mockResolvedValue(undefined);
