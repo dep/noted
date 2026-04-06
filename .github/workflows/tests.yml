@@ -9,8 +9,26 @@ on:
       - "cursor/**"
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      macos: ${{ steps.filter.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            macos:
+              - 'macOS/**'
+              - '.github/workflows/tests.yml'
+
   unit-tests:
     name: Unit Tests
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15
 
     steps:
