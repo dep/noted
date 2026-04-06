@@ -106,6 +106,97 @@ final class AppStateDailyNotesTests: XCTestCase {
         XCTAssertEqual(content, "")
     }
 
+    // MARK: - dailyNoteURL(for:)
+
+    func test_dailyNoteURL_whenNoteExists_returnsURL() throws {
+        // Create daily folder and note for fixed date (2026-03-12)
+        let dailyDir = tempDir.appendingPathComponent("daily", isDirectory: true)
+        try FileManager.default.createDirectory(at: dailyDir, withIntermediateDirectories: true)
+        let expectedNote = dailyDir.appendingPathComponent("2026-03-12.md")
+        try "existing content".write(to: expectedNote, atomically: true, encoding: .utf8)
+
+        let url = sut.dailyNoteURL(for: Self.fixedDate)
+
+        XCTAssertEqual(url, expectedNote)
+    }
+
+    func test_dailyNoteURL_whenNoteDoesNotExist_returnsNil() throws {
+        // Don't create any note
+        let url = sut.dailyNoteURL(for: Self.fixedDate)
+
+        XCTAssertNil(url)
+    }
+
+    func test_dailyNoteURL_usesConfiguredFolder() throws {
+        // Change folder name
+        sut.settings.dailyNotesFolder = "journals"
+
+        // Create note in journals folder
+        let journalsDir = tempDir.appendingPathComponent("journals", isDirectory: true)
+        try FileManager.default.createDirectory(at: journalsDir, withIntermediateDirectories: true)
+        let expectedNote = journalsDir.appendingPathComponent("2026-03-12.md")
+        try "journal entry".write(to: expectedNote, atomically: true, encoding: .utf8)
+
+        let url = sut.dailyNoteURL(for: Self.fixedDate)
+
+        XCTAssertEqual(url, expectedNote)
+    }
+
+    func test_dailyNoteURL_differentDates_returnsCorrectURLs() throws {
+        let dailyDir = tempDir.appendingPathComponent("daily", isDirectory: true)
+        try FileManager.default.createDirectory(at: dailyDir, withIntermediateDirectories: true)
+
+        // Create notes for different dates
+        let note1 = dailyDir.appendingPathComponent("2026-03-10.md")
+        let note2 = dailyDir.appendingPathComponent("2026-03-15.md")
+        try "note 1".write(to: note1, atomically: true, encoding: .utf8)
+        try "note 2".write(to: note2, atomically: true, encoding: .utf8)
+
+        // Create date components for different dates
+        var components1 = DateComponents()
+        components1.year = 2026
+        components1.month = 3
+        components1.day = 10
+        let date1 = Calendar.current.date(from: components1)!
+
+        var components2 = DateComponents()
+        components2.year = 2026
+        components2.month = 3
+        components2.day = 15
+        let date2 = Calendar.current.date(from: components2)!
+
+        XCTAssertEqual(sut.dailyNoteURL(for: date1), note1)
+        XCTAssertEqual(sut.dailyNoteURL(for: date2), note2)
+    }
+
+    func test_dailyNoteURL_withEmptyFolderSetting_usesDefaultDailyFolder() throws {
+        // Set empty folder (should default to "daily")
+        sut.settings.dailyNotesFolder = ""
+
+        let dailyDir = tempDir.appendingPathComponent("daily", isDirectory: true)
+        try FileManager.default.createDirectory(at: dailyDir, withIntermediateDirectories: true)
+        let expectedNote = dailyDir.appendingPathComponent("2026-03-12.md")
+        try "note".write(to: expectedNote, atomically: true, encoding: .utf8)
+
+        let url = sut.dailyNoteURL(for: Self.fixedDate)
+
+        XCTAssertEqual(url, expectedNote)
+    }
+
+    func test_dailyNoteURL_whitespaceFolderName_getsTrimmed() throws {
+        // Set folder with whitespace (should be trimmed)
+        sut.settings.dailyNotesFolder = "  journals  "
+
+        let journalsDir = tempDir.appendingPathComponent("journals", isDirectory: true)
+        try FileManager.default.createDirectory(at: journalsDir, withIntermediateDirectories: true)
+        let expectedNote = journalsDir.appendingPathComponent("2026-03-12.md")
+        try "note".write(to: expectedNote, atomically: true, encoding: .utf8)
+
+        let url = sut.dailyNoteURL(for: Self.fixedDate)
+
+        XCTAssertEqual(url, expectedNote)
+    }
+
     // MARK: - Helpers
 
     @discardableResult

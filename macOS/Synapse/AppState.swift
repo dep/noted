@@ -2427,6 +2427,27 @@ class AppState: ObservableObject {
         return noteURL
     }
 
+    /// Returns the URL for the daily note on a specific date, if it exists.
+    /// - Parameter date: The date to check for a daily note
+    /// - Returns: The URL of the daily note if it exists, nil otherwise
+    func dailyNoteURL(for date: Date) -> URL? {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        let year = String(format: "%04d", components.year ?? 0)
+        let month = String(format: "%02d", components.month ?? 0)
+        let day = String(format: "%02d", components.day ?? 0)
+        let fileName = "\(year)-\(month)-\(day).md"
+
+        guard let root = rootURL else { return nil }
+
+        let folderName = settings.dailyNotesFolder.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dailyFolderName = folderName.isEmpty ? AppConstants.defaultDailyNotesFolder : folderName
+        let dailyFolderURL = standardized(root.appendingPathComponent(dailyFolderName, isDirectory: true))
+        let noteURL = standardized(dailyFolderURL.appendingPathComponent(fileName))
+
+        let fm = FileManager.default
+        return fm.fileExists(atPath: noteURL.path) ? noteURL : nil
+    }
+
     func dismissTemplateRenamePrompt() {
         pendingTemplateRename = nil
     }

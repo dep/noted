@@ -16,6 +16,11 @@ struct DatePageView: View {
         appState.notesModifiedOnDate(date)
     }
 
+    /// Returns the URL for the daily note if it exists, nil otherwise
+    private var dailyNoteURL: URL? {
+        appState.dailyNoteURL(for: date)
+    }
+
     private var dateTitle: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -48,6 +53,31 @@ struct DatePageView: View {
                     }
 
                     Spacer()
+
+                    // Daily Note Button (only shown if daily note exists)
+                    if let dailyURL = dailyNoteURL {
+                        Button(action: {
+                            appState.openFile(dailyURL)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("Open Daily Note")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundStyle(SynapseTheme.accent)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(SynapseTheme.accent.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(SynapseTheme.accent.opacity(0.3), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open daily note for this date")
+                    }
 
                     Button(action: {
                         if let index = appState.activeTabIndex {
