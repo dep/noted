@@ -911,6 +911,24 @@ export class GitService {
           };
           return;
         }
+
+        if (localHash === blob.sha) {
+          nextFiles[blob.path] = {
+            sha: blob.sha,
+            mode: blob.mode,
+            type: blob.mode === '120000' ? 'symlink' : 'blob',
+          };
+          return;
+        }
+
+        // Remote moved on; local does not match the last recorded blob or the new tip.
+        // Never copy previousEntry here — that would pin a stale oid and break sync.
+        nextFiles[blob.path] = {
+          sha: localHash,
+          mode: blob.mode,
+          type: blob.mode === '120000' ? 'symlink' : 'blob',
+        };
+        return;
       }
 
       if (previousEntry) {
