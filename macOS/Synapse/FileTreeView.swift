@@ -692,14 +692,9 @@ struct FileTreeView: View {
         // Clear selected file to show folder view instead of file view
         appState.selectedFile = nil
         
-        // Collapse all root-level folders except the one being focused.
-        let rootDirs = nodes.filter { $0.isDirectory }.map { $0.url }
-        for dir in rootDirs where dir != folder {
-            expandedDirs.remove(dir)
-        }
-        // Expand the target folder and all its ancestors.
-        expandPath(to: folder)
-        expandedDirs.insert(folder)
+        // Navigate into the folder using the flat navigator (sets both currentDirectory and pathStack)
+        appState.navigateToFolder(folder)
+        
         // Scroll to it.
         DispatchQueue.main.async {
             withAnimation(.easeInOut(duration: 0.18)) {

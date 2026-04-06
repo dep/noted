@@ -38,7 +38,6 @@ jest.mock('../../src/services/SettingsStorage', () => ({
     getDailyNotesEnabled: jest.fn(),
     getDailyNotesFolder: jest.fn(),
     getDailyNotesTemplate: jest.fn(),
-    getAllDailyNoteSettings: jest.fn(),
   },
 }));
 
@@ -58,11 +57,6 @@ describe('DailyNoteService', () => {
     mockedSettingsStorage.getDailyNotesEnabled.mockResolvedValue(true);
     mockedSettingsStorage.getDailyNotesFolder.mockResolvedValue('daily');
     mockedSettingsStorage.getDailyNotesTemplate.mockResolvedValue('');
-    mockedSettingsStorage.getAllDailyNoteSettings.mockResolvedValue({
-      dailyNotesEnabled: true,
-      dailyNotesFolder: 'daily',
-      dailyNotesTemplate: '',
-    });
   });
 
   describe('getTodayNotePath', () => {

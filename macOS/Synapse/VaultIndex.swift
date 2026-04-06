@@ -25,6 +25,10 @@ final class VaultIndex: ObservableObject {
     @Published var allProjectFiles: [URL] = []
     /// Recently opened files (most-recent first).
     @Published var recentFiles: [URL] = []
+    /// Recently opened tags (most-recent first).
+    @Published var recentTags: [String] = []
+    /// Recently opened folders (most-recent first).
+    @Published var recentFolders: [URL] = []
     /// True while the background indexing pass is in progress.
     @Published var isIndexing: Bool = false
     /// Monotonically incremented UUID that fires whenever any file content changes.

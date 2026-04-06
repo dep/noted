@@ -152,6 +152,7 @@ class AppState: ObservableObject {
         case files
         case templates
         case wikiLink
+        case tags
     }
 
     // MARK: - Sub-Objects (4A split)
@@ -176,6 +177,8 @@ class AppState: ObservableObject {
     @Published var allFiles: [URL] = []
     @Published var allProjectFiles: [URL] = []
     @Published var recentFiles: [URL] = []
+    @Published var recentTags: [String] = []
+    @Published var recentFolders: [URL] = []
     /// True while the background indexing pass (content parsing) is in progress.
     @Published var isIndexing: Bool = false
 
@@ -341,6 +344,19 @@ class AppState: ObservableObject {
             name: NSApplication.willTerminateNotification,
             object: nil
         )
+        // Global fallback for CMD-K: opens command palette when EditorView doesn't handle it
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleCommandK),
+            name: .commandKPressed,
+            object: nil
+        )
+    }
+
+    @objc private func handleCommandK() {
+        // Only present if not already presented (EditorView may have already handled it)
+        guard !isCommandPalettePresented else { return }
+        presentCommandPalette()
     }
 
     /// Mirrors AppState @Published values into the focused sub-objects so that views which
@@ -352,6 +368,8 @@ class AppState: ObservableObject {
             $allFiles.sink { [weak self] v in self?.vaultIndex.allFiles = v },
             $allProjectFiles.sink { [weak self] v in self?.vaultIndex.allProjectFiles = v },
             $recentFiles.sink { [weak self] v in self?.vaultIndex.recentFiles = v },
+            $recentTags.sink { [weak self] v in self?.vaultIndex.recentTags = v },
+            $recentFolders.sink { [weak self] v in self?.vaultIndex.recentFolders = v },
             $isIndexing.sink { [weak self] v in self?.vaultIndex.isIndexing = v },
             $lastContentChange.sink { [weak self] v in self?.vaultIndex.lastContentChange = v },
 
@@ -1262,6 +1280,31 @@ class AppState: ObservableObject {
             }
         }
         return tagCounts
+    }
+
+    /// Returns all folders in the vault.
+    /// Derives from allFiles by collecting all unique directory URLs.
+    func allFolders() -> [URL] {
+        guard let root = rootURL else { return [] }
+        
+        var folders = Set<URL>()
+        
+        // Always include the root
+        folders.insert(root)
+        
+        // Collect all parent directories of files
+        for file in allFiles {
+            var currentDir = file.deletingLastPathComponent()
+            
+            // Walk up the tree until we hit the root
+            while currentDir.path.hasPrefix(root.path) && currentDir != root {
+                folders.insert(currentDir)
+                currentDir = currentDir.deletingLastPathComponent()
+            }
+        }
+        
+        // Sort alphabetically for consistent ordering
+        return folders.sorted { $0.path < $1.path }
     }
 
     /// Returns all notes that contain a specific tag (case-insensitive).
@@ -2569,6 +2612,14 @@ class AppState: ObservableObject {
     /// root-level folders and expand/focus this one.
     func expandAndScrollToFolder(_ url: URL) {
         focusPinnedFolder = url
+        
+        // Update recent folders
+        recentFolders.removeAll { $0 == url }
+        recentFolders.insert(url, at: 0)
+        if recentFolders.count > AppConstants.maxRecentFolders { recentFolders = Array(recentFolders.prefix(AppConstants.maxRecentFolders)) }
+        
+        // Write runtime state file
+        scheduleStateFileWrite()
     }
 
     func openFileInNewTab(_ url: URL) {
@@ -2679,6 +2730,14 @@ class AppState: ObservableObject {
 
         // Update recency
         recordTabRecency(for: .tag(tag))
+        
+        // Update recent tags
+        recentTags.removeAll { $0 == tag }
+        recentTags.insert(tag, at: 0)
+        if recentTags.count > AppConstants.maxRecentTags { recentTags = Array(recentTags.prefix(AppConstants.maxRecentTags)) }
+        
+        // Write runtime state file
+        scheduleStateFileWrite()
     }
 
     func openDate(_ date: Date) {
