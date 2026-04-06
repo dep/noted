@@ -39,6 +39,8 @@ enum AppConstants {
     static let maxRecentFiles = 40
     /// Maximum recent tags to keep
     static let maxRecentTags = 20
+    /// Maximum recent folders to keep
+    static let maxRecentFolders = 20
     /// Maximum search matches
     static let maxSearchMatches = 2000
     /// Maximum link token length for wiki-link completion

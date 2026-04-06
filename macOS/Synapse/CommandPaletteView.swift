@@ -1,28 +1,23 @@
 import SwiftUI
 import AppKit
 
-/// Scores a file URL against a search needle for command palette ranking.
+/// Scores a file URL against a search needle - ONLY matches filename, never paths.
 ///
 /// Scoring tiers (higher is better):
 ///   200  exact stem match
 ///   190  exact filename match
 ///   100  stem prefix match
 ///    90  filename prefix match
-///    70  relative-path prefix match
 ///    60  stem substring match
 ///    45  filename substring match
-///    30  relative-path substring match
-///    15  per matched word-part (multi-word fallback)
 ///
-/// A depth penalty of 2 per path component is subtracted to prefer shallower files.
 /// Returns 0 when there is no match (caller should exclude the result).
-func commandPaletteScore(forURL url: URL, needle: String, relativePath: String) -> Int {
+func commandPaletteScoreByFilename(forURL url: URL, needle: String) -> Int {
     let normalizedNeedle = needle.lowercased()
     guard !normalizedNeedle.isEmpty else { return 0 }
 
     let name = url.lastPathComponent.lowercased()
     let stem = url.deletingPathExtension().lastPathComponent.lowercased()
-    let relPath = relativePath.lowercased()
 
     var score = 0
 
@@ -30,26 +25,37 @@ func commandPaletteScore(forURL url: URL, needle: String, relativePath: String) 
     else if name == normalizedNeedle { score += 190 }
     else if stem.hasPrefix(normalizedNeedle) { score += 100 }
     else if name.hasPrefix(normalizedNeedle) { score += 90 }
-    else if relPath.hasPrefix(normalizedNeedle) { score += 70 }
 
     if score == 0 {
         if stem.contains(normalizedNeedle) { score += 60 }
         else if name.contains(normalizedNeedle) { score += 45 }
-        else if relPath.contains(normalizedNeedle) { score += 30 }
-    }
-
-    if score == 0 {
-        let needleParts = normalizedNeedle.split(separator: " ").map(String.init)
-        let matchedParts = needleParts.filter { part in
-            stem.contains(part) || relPath.contains(part)
-        }
-        score += matchedParts.count * 15
     }
 
     guard score > 0 else { return 0 }
+    return score
+}
 
-    let depth = relPath.components(separatedBy: "/").count - 1
-    score -= depth * 2
+/// Scores a folder URL against a search needle - ONLY matches folder name, never paths.
+///
+/// Scoring tiers (higher is better):
+///   200  exact folder name match
+///   100  folder name prefix match
+///    60  folder name substring match
+///
+/// Returns 0 when there is no match (caller should exclude the result).
+func commandPaletteScoreByFolderName(forURL url: URL, needle: String) -> Int {
+    let normalizedNeedle = needle.lowercased()
+    guard !normalizedNeedle.isEmpty else { return 0 }
+
+    let folderName = url.lastPathComponent.lowercased()
+
+    var score = 0
+
+    if folderName == normalizedNeedle { score += 200 }
+    else if folderName.hasPrefix(normalizedNeedle) { score += 100 }
+    else if folderName.contains(normalizedNeedle) { score += 60 }
+
+    guard score > 0 else { return 0 }
     return score
 }
 
@@ -78,24 +84,34 @@ struct CommandPaletteView: View {
         }
     }
 
-    /// Returns both files and tags in a single search
+    /// Returns both files, tags, and folders in a single search
     private func combinedResults(for query: String) -> [CommandPaletteResult] {
         let files = fileResults(for: query)
         let tags = tagResults(for: query, limit: 5) // Show top 5 tags
+        let folders = folderResults(for: query, limit: 5) // Show top 5 folders
 
-        // If there's a query, interleave results: files first, then tags
-        // If empty, show recent files and recent tags
+        // If there's a query, interleave results: files first, then tags, then folders
+        // If empty, show recent files, recent tags, and recent folders
         if query.isEmpty {
             // Get recent tags and convert to results
             let recentTags = appState.recentTags.map { tag -> CommandPaletteResult in
                 let count = appState.allTags()[tag] ?? 0
                 return CommandPaletteResult.tag(name: tag, count: count)
             }
-            return files + recentTags
+            // Get recent folders and convert to results
+            let recentFolders = appState.recentFolders.map { CommandPaletteResult.folder(url: $0) }
+            // Always show Root shortcut when not already at root
+            let rootResult: [CommandPaletteResult] = appState.canNavigateBackInFlatNavigator ? [.navigateToRoot] : []
+            return files + recentTags + recentFolders + rootResult
         }
 
-        // Combine: files first, then tags at the bottom
-        return files + tags
+        // When query matches "root", add the root action
+        let rootResult: [CommandPaletteResult] = "root".contains(query.lowercased()) ? [.navigateToRoot] : []
+        // When query matches "today", add the today action
+        let todayResult: [CommandPaletteResult] = "today".contains(query.lowercased()) ? [.openTodayNote] : []
+
+        // Combine: files first, then tags, then folders at the bottom
+        return files + tags + folders + rootResult + todayResult
     }
 
     private func fileResults(for query: String) -> [CommandPaletteResult] {
@@ -119,14 +135,13 @@ struct CommandPaletteView: View {
 
         let scoredResults: [(url: URL, score: Int)] = files
             .compactMap { url -> (url: URL, score: Int)? in
-                let relativePath = appState.relativePath(for: url)
-                let score = commandPaletteScore(forURL: url, needle: needle, relativePath: relativePath)
+                let score = commandPaletteScoreByFilename(forURL: url, needle: needle)
                 guard score > 0 else { return nil }
                 return (url, score)
             }
             .sorted {
                 if $0.score != $1.score { return $0.score > $1.score }
-                return appState.relativePath(for: $0.url).localizedStandardCompare(appState.relativePath(for: $1.url)) == .orderedAscending
+                return $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending
             }
 
         var finalResults = scoredResults
@@ -183,6 +198,32 @@ struct CommandPaletteView: View {
         return results
     }
 
+    private func folderResults(for query: String, limit: Int? = nil) -> [CommandPaletteResult] {
+        let allFolders = appState.allFolders()
+        let trimmedSearch = query.trimmingCharacters(in: .whitespaces).lowercased()
+
+        // When empty, don't show folders in search results (they're shown in recent)
+        if trimmedSearch.isEmpty {
+            return []
+        }
+
+        // Score and filter folders - only by folder name, not path
+        let scoredFolders: [(url: URL, score: Int)] = allFolders
+            .compactMap { url -> (url: URL, score: Int)? in
+                let score = commandPaletteScoreByFolderName(forURL: url, needle: trimmedSearch)
+                guard score > 0 else { return nil }
+                return (url, score)
+            }
+            .sorted { $0.score > $1.score }
+
+        let results = scoredFolders.map { CommandPaletteResult.folder(url: $0.url) }
+
+        if let limit = limit {
+            return Array(results.prefix(limit))
+        }
+        return results
+    }
+
     private var sourceFiles: [URL] {
         switch appState.commandPaletteMode {
         case .files, .wikiLink:
@@ -210,13 +251,15 @@ struct CommandPaletteView: View {
     private var resultsBadgeText: String {
         let fileCount = results.filter { if case .file = $0 { return true }; return false }.count
         let tagCount = results.filter { if case .tag = $0 { return true }; return false }.count
+        let folderCount = results.filter { if case .folder = $0 { return true }; return false }.count
 
         switch appState.commandPaletteMode {
         case .files:
-            if tagCount > 0 {
-                return "\(fileCount) files, \(tagCount) tags"
-            }
-            return "\(fileCount) matches"
+            var parts: [String] = []
+            if fileCount > 0 { parts.append("\(fileCount) files") }
+            if tagCount > 0 { parts.append("\(tagCount) tags") }
+            if folderCount > 0 { parts.append("\(folderCount) folders") }
+            return parts.isEmpty ? "0 matches" : parts.joined(separator: ", ")
         case .templates:
             return "\(fileCount) templates"
         case .wikiLink:
@@ -366,6 +409,12 @@ struct CommandPaletteView: View {
             fileRow(for: url, at: index)
         case .tag(let name, let count):
             tagRow(for: name, count: count, at: index)
+        case .folder(let url):
+            folderRow(for: url, at: index)
+        case .navigateToRoot:
+            navigateToRootRow(at: index)
+        case .openTodayNote:
+            openTodayNoteRow(at: index)
         }
     }
 
@@ -403,6 +452,62 @@ struct CommandPaletteView: View {
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(index == selectedIndex ? Color.white.opacity(0.82) : SynapseTheme.textSecondary)
                     .lineLimit(1)
+            }
+            Spacer()
+        }
+        .paletteRow(selected: index == selectedIndex)
+    }
+
+    private func folderRow(for url: URL, at index: Int) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "folder")
+                .foregroundStyle(SynapseTheme.accent)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(url.lastPathComponent)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(index == selectedIndex ? Color.white : SynapseTheme.textPrimary)
+                    .lineLimit(1)
+                Text(appState.relativePath(for: url))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(index == selectedIndex ? Color.white.opacity(0.82) : SynapseTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .paletteRow(selected: index == selectedIndex)
+    }
+
+    private func navigateToRootRow(at index: Int) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.up.to.line")
+                .foregroundStyle(SynapseTheme.accent)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Root")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(index == selectedIndex ? Color.white : SynapseTheme.textPrimary)
+                Text("Navigate folder view back to top level")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(index == selectedIndex ? Color.white.opacity(0.82) : SynapseTheme.textSecondary)
+            }
+            Spacer()
+        }
+        .paletteRow(selected: index == selectedIndex)
+    }
+
+    private func openTodayNoteRow(at index: Int) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar")
+                .foregroundStyle(SynapseTheme.accent)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Today")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(index == selectedIndex ? Color.white : SynapseTheme.textPrimary)
+                Text("Open today's daily note, creating it if needed")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(index == selectedIndex ? Color.white.opacity(0.82) : SynapseTheme.textSecondary)
             }
             Spacer()
         }
@@ -475,6 +580,14 @@ struct CommandPaletteView: View {
             openFileResult(url)
         case .tag(let name, _):
             openTagResult(name)
+        case .folder(let url):
+            openFolderResult(url)
+        case .navigateToRoot:
+            appState.dismissCommandPalette()
+            appState.navigateToRootInFlatNavigator()
+        case .openTodayNote:
+            appState.dismissCommandPalette()
+            appState.openTodayNote()
         }
     }
 
@@ -502,6 +615,11 @@ struct CommandPaletteView: View {
         appState.openTagInNewTab(tag)
     }
 
+    private func openFolderResult(_ folder: URL) {
+        appState.dismissCommandPalette()
+        appState.expandAndScrollToFolder(folder)
+    }
+
     private func primaryLabel(for url: URL) -> String {
         if url == blankTemplateURL {
             return "Create a note without a template"
@@ -522,13 +640,17 @@ struct CommandPaletteView: View {
 enum CommandPaletteResult: Identifiable {
     case file(url: URL)
     case tag(name: String, count: Int)
+    case folder(url: URL)
+    case navigateToRoot
+    case openTodayNote
 
     var id: String {
         switch self {
-        case .file(let url):
-            return "file:\(url.absoluteString)"
-        case .tag(let name, _):
-            return "tag:\(name)"
+        case .file(let url):       return "file:\(url.absoluteString)"
+        case .tag(let name, _):    return "tag:\(name)"
+        case .folder(let url):     return "folder:\(url.absoluteString)"
+        case .navigateToRoot:      return "action:navigateToRoot"
+        case .openTodayNote:       return "action:openTodayNote"
         }
     }
 }
