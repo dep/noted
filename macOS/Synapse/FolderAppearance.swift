@@ -5,6 +5,7 @@ import SwiftUI
 /// A named pastel color that looks good in both light and dark themes.
 struct FolderColor: Identifiable, Equatable {
     let id: String          // key stored in settings
+    let label: String       // display name
     let color: Color
 }
 
