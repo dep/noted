@@ -19,6 +19,7 @@ export class PinningStorage {
   }
 
   static async getPinnedItems(vaultPath: string): Promise<PinnedItem[]> {
+    if (!vaultPath) return [];
     try {
       const key = this.getStorageKey(vaultPath);
       const json = await AsyncStorage.getItem(key);

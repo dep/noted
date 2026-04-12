@@ -36,6 +36,7 @@ export function TemplatePicker({ isVisible, onClose, onSelectTemplate, vaultPath
   }, [isVisible, vaultPath]);
 
   const loadTemplates = async () => {
+    if (!vaultPath) return;
     setIsLoading(true);
     try {
       const availableTemplates = await TemplateStorage.getAvailableTemplates(vaultPath);
@@ -81,7 +82,7 @@ export function TemplatePicker({ isVisible, onClose, onSelectTemplate, vaultPath
           {getTemplateDisplayName(item)}
         </Text>
         <Text style={[styles.templatePath, { color: theme.colors.text + '60' }]} numberOfLines={1}>
-          {item.path.replace(vaultPath, '').replace(/^\/+/, '')}
+          {vaultPath ? item.path.replace(vaultPath, '').replace(/^\/+/, '') : item.name}
         </Text>
       </View>
     </TouchableOpacity>
@@ -174,7 +175,7 @@ export function TemplatePicker({ isVisible, onClose, onSelectTemplate, vaultPath
                     {getTemplateDisplayName(item)}
                   </Text>
                   <Text style={[styles.optionSubtext, { color: theme.colors.text + '50' }]} numberOfLines={1}>
-                    {item.path.replace(vaultPath, '').replace(/^\/+/, '')}
+                    {vaultPath ? item.path.replace(vaultPath, '').replace(/^\/+/, '') : item.name}
                   </Text>
                 </View>
                 <MaterialIcons name="chevron-right" size={20} color={theme.colors.text + '40'} />

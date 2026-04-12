@@ -344,6 +344,7 @@ export function FileDrawer({
 
   // Load pinned items
   const loadPinnedItems = useCallback(async () => {
+    if (!vaultPath) return;
     try {
       const items = await PinningStorage.getPinnedItems(vaultPath);
       setPinnedItems(items);
@@ -392,6 +393,7 @@ export function FileDrawer({
   }, []);
 
   const loadRootFiles = useCallback(async (forceRefresh = false) => {
+    if (!vaultPath) return;
     console.log('[FileDrawer] Loading root files from:', vaultPath, forceRefresh ? '(forced refresh)' : '');
     if (!forceRefresh && lastLoadedVaultPath === vaultPath) {
       console.log('[FileDrawer] Already loaded for this vault, skipping');
@@ -444,6 +446,7 @@ export function FileDrawer({
   }, [loadRootFiles, loadPinnedItems]);
 
   const loadFlatFiles = useCallback(async (forceRefresh = false) => {
+    if (!vaultPath) return;
     if (!forceRefresh && flatFiles.length > 0) {
       return;
     }
@@ -600,6 +603,7 @@ export function FileDrawer({
   };
 
   const handlePinItem = async (path: string, name: string, isFolder: boolean) => {
+    if (!vaultPath) return;
     try {
       await PinningStorage.pinItem(path, name, isFolder, vaultPath);
       await loadPinnedItems();
@@ -610,6 +614,7 @@ export function FileDrawer({
   };
 
   const handleUnpinItem = async (path: string) => {
+    if (!vaultPath) return;
     try {
       await PinningStorage.unpinItem(path, vaultPath);
       await loadPinnedItems();
@@ -620,6 +625,7 @@ export function FileDrawer({
   };
 
   const showPinContextMenu = useCallback(async (node: FileNode) => {
+    if (!vaultPath) return;
     const isPinned = await PinningStorage.isPinned(node.path, vaultPath);
     
     const buttons: any[] = [
