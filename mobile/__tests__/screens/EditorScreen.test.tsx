@@ -64,7 +64,13 @@ jest.mock('@react-navigation/native', () => {
 
 describe('EditorScreen', () => {
   const mockNavigate = jest.fn();
+  const mockDispatch = jest.fn();
   const mockAddListener = jest.fn(() => jest.fn());
+
+  const getBeforeRemoveListener = () => {
+    const calls = (mockAddListener as jest.Mock).mock.calls.filter((call) => call[0] === 'beforeRemove');
+    return calls[calls.length - 1]?.[1] as ((e: any) => void) | undefined;
+  };
 
   const getLatestHardwareBackHandler = () => {
     const addListener = BackHandler.addEventListener as jest.Mock;
@@ -77,7 +83,7 @@ describe('EditorScreen', () => {
       <ThemeProvider>
         <EditorScreen
           route={{ key: 'Editor', name: 'Editor', params: { filePath } } as any}
-          navigation={{ navigate: mockNavigate, addListener: mockAddListener } as any}
+          navigation={{ navigate: mockNavigate, dispatch: mockDispatch, addListener: mockAddListener } as any}
         />
       </ThemeProvider>
     );
@@ -248,6 +254,44 @@ describe('EditorScreen', () => {
     act(() => {
       discard!.onPress!();
     });
+
+    await waitFor(() => {
+      expect(getByTestId('editor-input').props.value).toBe('# Old note');
+    });
+  });
+
+  it('discards in-memory edits when choosing Don\'t Save from the leave-screen (beforeRemove) prompt', async () => {
+    const { getByTestId } = renderScreen();
+
+    await waitFor(() => {
+      expect(getByTestId('editor-input').props.value).toBe('# Old note');
+    });
+
+    fireEvent.changeText(getByTestId('editor-input'), '# Edited note');
+
+    await waitFor(() => {
+      expect(getBeforeRemoveListener()).toBeDefined();
+    });
+
+    const beforeRemove = getBeforeRemoveListener()!;
+    const navAction = { type: 'GO_BACK' };
+    const event = { preventDefault: jest.fn(), data: { action: navAction } };
+    beforeRemove(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+
+    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2] as {
+      text: string;
+      onPress?: () => void;
+    }[];
+    const discard = buttons.find((b) => b.text === "Don't Save");
+    expect(discard?.onPress).toBeDefined();
+
+    act(() => {
+      discard!.onPress!();
+    });
+
+    expect(mockDispatch).toHaveBeenCalledWith(navAction);
 
     await waitFor(() => {
       expect(getByTestId('editor-input').props.value).toBe('# Old note');
