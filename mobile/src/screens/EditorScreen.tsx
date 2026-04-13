@@ -486,8 +486,8 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
     }
   };
 
-  const handleSave = async () => {
-    if (!hasChanges) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!hasChanges) return true;
 
     setIsSaving(true);
     setError(null);
@@ -499,9 +499,11 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
       }
       setOriginalContent(content);
       setHasChanges(false);
+      return true;
     } catch (err) {
       console.error('Failed to save file:', err);
       setError('Failed to save file or sync repository');
+      return false;
     } finally {
       setIsSaving(false);
       if (shouldRestoreEditorFocusRef.current && !isPreviewMode && !showWikilinkPicker) {
@@ -652,6 +654,7 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
             text: "Don't Save",
             style: 'destructive',
             onPress: () => {
+              setContent(originalContent);
               setHasChanges(false);
               setIsDrawerOpen(true);
             },
@@ -660,8 +663,10 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
             text: 'Save',
             style: 'default',
             onPress: async () => {
-              await handleSave();
-              setIsDrawerOpen(true);
+              const ok = await handleSave();
+              if (ok) {
+                setIsDrawerOpen(true);
+              }
             },
           },
         ]
@@ -669,7 +674,7 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
       return true; // Prevent default back action
     }
     return false; // Allow default back action
-  }, [hasChanges, navigation, content, originalContent]);
+  }, [hasChanges, navigation, content, originalContent, handleSave]);
 
   // Intercept Android back button
   useFocusEffect(
