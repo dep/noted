@@ -742,6 +742,8 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
             text: "Don't Save",
             style: 'destructive',
             onPress: () => {
+              setContent(originalContent);
+              setHasChanges(false);
               navigation.dispatch(e.data.action);
             },
           },
@@ -749,16 +751,9 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
             text: 'Save',
             style: 'default',
             onPress: async () => {
-              try {
-                await FileSystemService.writeFile(filePath, content);
-                const repositoryPath = await OnboardingStorage.getActiveRepositoryPath();
-                if (repositoryPath) {
-                  await GitService.sync(repositoryPath, [getRelativePath(repositoryPath, filePath)]);
-                }
+              const ok = await handleSave();
+              if (ok) {
                 navigation.dispatch(e.data.action);
-              } catch (err) {
-                console.error('Failed to save file:', err);
-                Alert.alert('Error', 'Failed to save file. Staying on screen.');
               }
             },
           },
@@ -767,7 +762,7 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
     });
 
     return unsubscribe;
-  }, [navigation, hasChanges, content, filePath, originalContent]);
+  }, [navigation, hasChanges, content, filePath, originalContent, handleSave]);
 
   const getFileName = () => {
     const parts = filePath.split('/');
