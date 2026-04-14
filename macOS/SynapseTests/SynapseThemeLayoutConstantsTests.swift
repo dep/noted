@@ -97,6 +97,36 @@ final class SynapseThemeLayoutConstantsTests: XCTestCase {
         XCTAssertEqual(SynapseTheme.Editor.maxInlinePreviewWidth, 320 * SynapseTheme.Layout.phi, accuracy: 0.1)
     }
 
+    // MARK: - Layout: spacing scale (base unit × powers of phi)
+
+    func test_baseUnit_isEight() {
+        XCTAssertEqual(SynapseTheme.Layout.baseUnit, 8.0, accuracy: 0.001)
+    }
+
+    func test_spaceSmall_equalsBaseUnit() {
+        XCTAssertEqual(SynapseTheme.Layout.spaceSmall, SynapseTheme.Layout.baseUnit, accuracy: 0.001)
+    }
+
+    func test_spaceMedium_isBaseTimesPhi() {
+        XCTAssertEqual(SynapseTheme.Layout.spaceMedium, SynapseTheme.Layout.baseUnit * SynapseTheme.Layout.phi, accuracy: 0.01)
+    }
+
+    func test_spaceLarge_isBaseTimesPhiSquared() {
+        let phi2 = SynapseTheme.Layout.phi * SynapseTheme.Layout.phi
+        XCTAssertEqual(SynapseTheme.Layout.spaceLarge, SynapseTheme.Layout.baseUnit * phi2, accuracy: 0.01)
+    }
+
+    func test_spaceExtraLarge_isBaseTimesPhiCubed() {
+        let phi3 = SynapseTheme.Layout.phi * SynapseTheme.Layout.phi * SynapseTheme.Layout.phi
+        XCTAssertEqual(SynapseTheme.Layout.spaceExtraLarge, SynapseTheme.Layout.baseUnit * phi3, accuracy: 0.01)
+    }
+
+    func test_spacingScale_increasesMonotonically() {
+        XCTAssertLessThan(SynapseTheme.Layout.spaceSmall, SynapseTheme.Layout.spaceMedium)
+        XCTAssertLessThan(SynapseTheme.Layout.spaceMedium, SynapseTheme.Layout.spaceLarge)
+        XCTAssertLessThan(SynapseTheme.Layout.spaceLarge, SynapseTheme.Layout.spaceExtraLarge)
+    }
+
     // MARK: - Heading sizes must decrease monotonically from h1 to h4
 
     func test_headingFontSizes_decreaseFromH1ToH4() {

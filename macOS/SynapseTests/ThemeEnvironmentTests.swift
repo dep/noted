@@ -34,6 +34,18 @@ final class ThemeEnvironmentTests: XCTestCase {
         XCTAssertEqual(env.theme.name, "Synapse (Light)")
     }
 
+    func test_observe_registersSharedWeakReferenceForSynapseThemeStatics() {
+        let prior = ThemeEnvironment.shared
+        defer { ThemeEnvironment.shared = prior }
+
+        ThemeEnvironment.shared = nil
+        let env = ThemeEnvironment()
+        env.observe(settings)
+
+        XCTAssertTrue(ThemeEnvironment.shared === env,
+                      "observe must set ThemeEnvironment.shared so SynapseTheme statics can delegate")
+    }
+
     func test_observe_updatesThemeWhenActiveThemeNameChanges() {
         let env = ThemeEnvironment()
         env.observe(settings)

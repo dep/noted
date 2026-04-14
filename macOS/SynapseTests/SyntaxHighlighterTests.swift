@@ -19,6 +19,15 @@ final class SyntaxHighlighterTests: XCTestCase {
         XCTAssertEqual(SyntaxHighlighter.canonicalLanguage("md"), "markdown")
     }
 
+    func test_canonicalLanguage_mapsShellRubyCppAliases() {
+        XCTAssertEqual(SyntaxHighlighter.canonicalLanguage("sh"), "bash")
+        XCTAssertEqual(SyntaxHighlighter.canonicalLanguage("zsh"), "bash")
+        XCTAssertEqual(SyntaxHighlighter.canonicalLanguage("shell"), "bash")
+        XCTAssertEqual(SyntaxHighlighter.canonicalLanguage("rb"), "ruby")
+        XCTAssertEqual(SyntaxHighlighter.canonicalLanguage("c++"), "cpp")
+        XCTAssertEqual(SyntaxHighlighter.canonicalLanguage("cplusplus"), "cpp")
+    }
+
     func test_canonicalLanguage_nilOrEmpty_returnsNil() {
         XCTAssertNil(SyntaxHighlighter.canonicalLanguage(nil))
         XCTAssertNil(SyntaxHighlighter.canonicalLanguage(""))
