@@ -823,6 +823,7 @@ struct RawEditor: NSViewRepresentable {
         }
         
         if textView.string != text {
+            context.coordinator.flushPendingStyling()
             context.coordinator.suppressSync = true
             let selected = textView.selectedRanges
             textView.setPlainText(text)
@@ -950,8 +951,64 @@ struct RawEditor: NSViewRepresentable {
         private var linkCheckScheduled = false
         private var pendingRefreshRequest: (oldText: String, newText: String, editedRange: NSRange, changeInLength: Int)?
         private var hasCoalescedEdits = false
+        private var stylingWorkItem: DispatchWorkItem?
+        private static let stylingDebounceInterval: TimeInterval = 0.08
 
         init(_ parent: RawEditor) { self.parent = parent }
+
+        func flushPendingStyling() {
+            guard stylingScheduled, let work = stylingWorkItem else { return }
+            work.cancel()
+            stylingWorkItem = nil
+            runPendingStyling()
+        }
+
+        private func runPendingStyling() {
+            guard let tv = textView else {
+                stylingScheduled = false
+                pendingRefreshRequest = nil
+                hasCoalescedEdits = false
+                return
+            }
+            stylingScheduled = false
+            stylingWorkItem = nil
+            let parser = MarkdownDocumentParser()
+            let document = parser.parse(tv.string)
+            let request = pendingRefreshRequest
+            let refreshPlan: MarkdownEditorRefreshPlan
+            if hasCoalescedEdits {
+                refreshPlan = .fullDocument
+            } else if let request, request.newText == tv.string {
+                refreshPlan = MarkdownEditorRefreshPlan.make(
+                    oldText: request.oldText,
+                    newText: request.newText,
+                    editedRange: request.editedRange,
+                    changeInLength: request.changeInLength,
+                    document: document
+                )
+            } else {
+                refreshPlan = .fullDocument
+            }
+            pendingRefreshRequest = nil
+            hasCoalescedEdits = false
+            suppressSync = true
+            let needsPreview = parent.appState.settings.hideMarkdownWhileEditing
+            if !needsPreview,
+               let request,
+               tv.shouldSkipIncrementalMarkdownRestyle(
+                   document: document,
+                   refreshPlan: refreshPlan,
+                   editedRange: request.editedRange
+               ) {
+                suppressSync = false
+                return
+            }
+            tv.applyMarkdownStyling(document: document, refreshPlan: refreshPlan, deferRedraw: needsPreview)
+            if needsPreview {
+                tv.applyPreviewStyling(document: document, refreshPlan: refreshPlan, editingSessionOpen: true)
+            }
+            suppressSync = false
+        }
 
         func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range editedRange: NSRange, changeInLength delta: Int) {
             guard !suppressSync, editedMask.contains(.editedCharacters) else { return }
@@ -981,49 +1038,16 @@ struct RawEditor: NSViewRepresentable {
                 stylingScheduled = true
                 pendingRefreshRequest = (oldText, newText, editedRange, delta)
                 hasCoalescedEdits = false
-                DispatchQueue.main.async { [weak self, weak tv] in
-                    guard let self, let tv else { return }
-                    self.stylingScheduled = false
-                    let parser = MarkdownDocumentParser()
-                    let document = parser.parse(tv.string)
-                    let request = self.pendingRefreshRequest
-                    let refreshPlan: MarkdownEditorRefreshPlan
-                    if self.hasCoalescedEdits {
-                        refreshPlan = .fullDocument
-                    } else if let request, request.newText == tv.string {
-                        refreshPlan = MarkdownEditorRefreshPlan.make(
-                            oldText: request.oldText,
-                            newText: request.newText,
-                            editedRange: request.editedRange,
-                            changeInLength: request.changeInLength,
-                            document: document
-                        )
-                    } else {
-                        refreshPlan = .fullDocument
-                    }
-                    self.pendingRefreshRequest = nil
-                    self.hasCoalescedEdits = false
-                    self.suppressSync = true
-                    let needsPreview = self.parent.appState.settings.hideMarkdownWhileEditing
-                    if !needsPreview,
-                       let request,
-                       tv.shouldSkipIncrementalMarkdownRestyle(
-                           document: document,
-                           refreshPlan: refreshPlan,
-                           editedRange: request.editedRange
-                       ) {
-                        self.suppressSync = false
-                        return
-                    }
-                    tv.applyMarkdownStyling(document: document, refreshPlan: refreshPlan, deferRedraw: needsPreview)
-                    if needsPreview {
-                        tv.applyPreviewStyling(document: document, refreshPlan: refreshPlan, editingSessionOpen: true)
-                    }
-                    self.suppressSync = false
-                }
             } else {
                 hasCoalescedEdits = true
+                stylingWorkItem?.cancel()
             }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.stylingScheduled else { return }
+                self.runPendingStyling()
+            }
+            stylingWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Coordinator.stylingDebounceInterval, execute: work)
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
