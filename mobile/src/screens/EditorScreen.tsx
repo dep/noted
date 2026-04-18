@@ -26,6 +26,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useFocusEffect } from '@react-navigation/native';
 import { FileDrawer } from '../components/FileDrawer';
+import { ImagePreviewModal } from '../components/ImagePreviewModal';
 
 const getRelativePath = (root: string, filePath: string) => {
   const normalizedRoot = FileSystemService.normalizeUri(root).replace(/\/+$/, '');
@@ -260,6 +261,10 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMatches, setSearchMatches] = useState<{ line: number; start: number; end: number; text: string }[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  // Image preview state
+  const [imagePreviewUri, setImagePreviewUri] = useState<string | null>(null);
+  const [showImagePreview, setShowImagePreview] = useState(false);
 
   const loadFileHistory = useCallback(async () => {
     try {
@@ -917,13 +922,21 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
         ? src.slice(LOCAL_IMAGE_SCHEME.length)
         : src;
       return (
-        <Image
+        <TouchableOpacity
           key={node.key}
-          source={{ uri }}
-          accessible={!!alt}
-          accessibilityLabel={alt}
-          style={[styles._VIEW_SAFE_image, { width: '100%', height: 200, resizeMode: 'contain' }]}
-        />
+          onPress={() => {
+            setImagePreviewUri(uri);
+            setShowImagePreview(true);
+          }}
+          activeOpacity={0.8}
+        >
+          <Image
+            source={{ uri }}
+            accessible={!!alt}
+            accessibilityLabel={alt}
+            style={[styles._VIEW_SAFE_image, { width: '100%', height: 200, resizeMode: 'contain' }]}
+          />
+        </TouchableOpacity>
       );
     },
     link: (node: any, children: any, parent: any, styles: any) => {
@@ -1434,6 +1447,18 @@ export function EditorScreen({ route, navigation }: EditorScreenProps) {
             </ScrollView>
           </View>
         </View>
+      )}
+
+      {/* Image Preview Modal */}
+      {imagePreviewUri && (
+        <ImagePreviewModal
+          isVisible={showImagePreview}
+          imageUri={imagePreviewUri}
+          onClose={() => {
+            setShowImagePreview(false);
+            setImagePreviewUri(null);
+          }}
+        />
       )}
 
       {/* History Modal */}
