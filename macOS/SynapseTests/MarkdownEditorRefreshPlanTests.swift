@@ -47,4 +47,37 @@ final class MarkdownEditorRefreshPlanTests: XCTestCase {
 
         XCTAssertEqual(plan, .fullDocument)
     }
+
+    func test_make_emptyOldText_returnsFullDocument() {
+        let oldText = ""
+        let newText = "Hello"
+        let document = parser.parse(newText)
+        let editedRange = NSRange(location: 0, length: 5)
+
+        let plan = MarkdownEditorRefreshPlan.make(oldText: oldText, newText: newText, editedRange: editedRange, changeInLength: 5, document: document)
+
+        XCTAssertEqual(plan, .fullDocument)
+    }
+
+    func test_make_emptyNewText_returnsFullDocument() {
+        let oldText = "Hello"
+        let newText = ""
+        let document = parser.parse(oldText)
+        let editedRange = NSRange(location: 0, length: 0)
+
+        let plan = MarkdownEditorRefreshPlan.make(oldText: oldText, newText: newText, editedRange: editedRange, changeInLength: -5, document: document)
+
+        XCTAssertEqual(plan, .fullDocument)
+    }
+
+    func test_make_returnsFullDocumentForThematicBreakEdit() {
+        let oldText = "Intro\n\n---\n\nOutro"
+        let newText = "Intro\n\n----\n\nOutro"
+        let document = parser.parse(newText)
+        let editedRange = NSRange(location: 9, length: 1)
+
+        let plan = MarkdownEditorRefreshPlan.make(oldText: oldText, newText: newText, editedRange: editedRange, changeInLength: 0, document: document)
+
+        XCTAssertEqual(plan, .fullDocument)
+    }
 }

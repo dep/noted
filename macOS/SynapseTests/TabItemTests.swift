@@ -30,6 +30,12 @@ final class TabItemTests: XCTestCase {
         XCTAssertEqual(TabItem.graph.displayName, "Graph")
     }
 
+    func test_displayName_dateTab_matchesIsoFormat() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 4, day: 18)))
+        XCTAssertEqual(TabItem.date(date).displayName, "2026-04-18")
+    }
+
     // MARK: - isFile
 
     func test_isFile_fileTab_returnsTrue() {
@@ -75,6 +81,22 @@ final class TabItemTests: XCTestCase {
         XCTAssertFalse(TabItem.tag("swift").isGraph)
     }
 
+    // MARK: - isDate
+
+    func test_isDate_dateTab_returnsTrue() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2025, month: 1, day: 1)))
+        XCTAssertTrue(TabItem.date(date).isDate)
+    }
+
+    func test_isDate_fileTab_returnsFalse() {
+        XCTAssertFalse(TabItem.file(URL(fileURLWithPath: "/vault/note.md")).isDate)
+    }
+
+    func test_isDate_graphTab_returnsFalse() {
+        XCTAssertFalse(TabItem.graph.isDate)
+    }
+
     // MARK: - fileURL
 
     func test_fileURL_fileTab_returnsAssociatedURL() {
@@ -109,6 +131,22 @@ final class TabItemTests: XCTestCase {
         XCTAssertNil(TabItem.graph.tagName)
     }
 
+    // MARK: - dateValue
+
+    func test_dateValue_dateTab_returnsAssociatedDate() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 2, day: 3)))
+        XCTAssertEqual(TabItem.date(date).dateValue, date)
+    }
+
+    func test_dateValue_fileTab_returnsNil() {
+        XCTAssertNil(TabItem.file(URL(fileURLWithPath: "/vault/note.md")).dateValue)
+    }
+
+    func test_dateValue_tagTab_returnsNil() {
+        XCTAssertNil(TabItem.tag("swift").dateValue)
+    }
+
     // MARK: - Hashable / Equatable
 
     func test_fileTabEquality_sameURL_isEqual() {
@@ -132,6 +170,19 @@ final class TabItemTests: XCTestCase {
 
     func test_graphTabEquality_isEqualToItself() {
         XCTAssertEqual(TabItem.graph, TabItem.graph)
+    }
+
+    func test_dateTabEquality_sameInstant_isEqual() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2024, month: 6, day: 15)))
+        XCTAssertEqual(TabItem.date(date), TabItem.date(date))
+    }
+
+    func test_dateTabEquality_differentDays_isNotEqual() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let a = try XCTUnwrap(calendar.date(from: DateComponents(year: 2024, month: 6, day: 15)))
+        let b = try XCTUnwrap(calendar.date(from: DateComponents(year: 2024, month: 6, day: 16)))
+        XCTAssertNotEqual(TabItem.date(a), TabItem.date(b))
     }
 
     func test_differentTabTypes_fileVsGraph_areNotEqual() {
