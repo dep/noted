@@ -12,3 +12,5 @@ Whenever you modify `.swift` files, you MUST rebuild and relaunch the app BEFORE
 Use `@.agents/commands/RELOAD.md on macOS`
 
 Do not skip this step, even if unit tests pass. This overrides the "Minimize Verification Loops" rule.
+
+</critical_workflow>
