@@ -52,7 +52,10 @@ import { canPublishGist, createGist } from '../github/gists'
 import { loadPreviewRatio, savePreviewRatio } from '../lib/previewRatio'
 import { createPinsStore, type PinnedItem } from '../lib/pins'
 import {
+  DEFAULT_SORT,
+  formatSortToken,
   loadSortSettings,
+  parseSortToken,
   saveSortSettings,
   type SortSettings,
 } from '../lib/sort'
@@ -61,6 +64,7 @@ import {
   formatRoute,
   routeFile,
   routeFolder,
+  routeQuery,
   type Route,
 } from '../lib/route'
 import { defaultCommitMessage } from '../lib/commit'
@@ -101,7 +105,7 @@ export function RepoEditor({
 }: {
   repo: SelectedRepo
   route: Route
-  navigate: (to: string) => void
+  navigate: (to: string, options?: { replace?: boolean }) => void
   onChangeRepo: () => void
 }) {
   const { token, logout, scopes } = useAuth()
@@ -113,28 +117,87 @@ export function RepoEditor({
   const [pinnedItems, setPinnedItems] = useState<PinnedItem[]>(() =>
     pinsStore.list(),
   )
-  const [sort, setSort] = useState<SortSettings>(() =>
-    loadSortSettings(repo.fullName),
-  )
-
   const currentFolder = routeFolder(route)
   const currentFile = routeFile(route)
+  const currentQuery = routeQuery(route)
+
+  // Sort: URL wins, localStorage is the default, DEFAULT_SORT is last resort.
+  const sort: SortSettings = useMemo(() => {
+    const fromUrl = parseSortToken(currentQuery.sort)
+    if (fromUrl) return fromUrl
+    return loadSortSettings(repo.fullName) ?? DEFAULT_SORT
+  }, [currentQuery.sort, repo.fullName])
 
   const navigateToFolder = useCallback(
     (folder: string) => {
-      navigate(formatRoute({ kind: 'folder', owner, repo: repoName, folder }))
+      navigate(
+        formatRoute({
+          kind: 'folder',
+          owner,
+          repo: repoName,
+          folder,
+          query: currentQuery,
+        }),
+      )
     },
-    [navigate, owner, repoName],
+    [navigate, owner, repoName, currentQuery],
   )
 
   const navigateToFile = useCallback(
     (file: string) => {
-      navigate(formatRoute({ kind: 'file', owner, repo: repoName, file }))
+      navigate(
+        formatRoute({
+          kind: 'file',
+          owner,
+          repo: repoName,
+          file,
+          query: currentQuery,
+        }),
+      )
     },
-    [navigate, owner, repoName],
+    [navigate, owner, repoName, currentQuery],
   )
 
-  useEffect(() => saveSortSettings(repo.fullName, sort), [repo.fullName, sort])
+  const setSort = useCallback(
+    (next: SortSettings) => {
+      saveSortSettings(repo.fullName, next)
+      const nextQuery: Record<string, string> = {
+        ...currentQuery,
+        sort: formatSortToken(next),
+      }
+      // Replace, not push — sort is a preference, not a navigation.
+      navigate(
+        formatRoute(
+          route.kind === 'picker'
+            ? { kind: 'picker', query: nextQuery }
+            : route.kind === 'repo'
+              ? {
+                  kind: 'repo',
+                  owner: route.owner,
+                  repo: route.repo,
+                  query: nextQuery,
+                }
+              : route.kind === 'folder'
+                ? {
+                    kind: 'folder',
+                    owner: route.owner,
+                    repo: route.repo,
+                    folder: route.folder,
+                    query: nextQuery,
+                  }
+                : {
+                    kind: 'file',
+                    owner: route.owner,
+                    repo: route.repo,
+                    file: route.file,
+                    query: nextQuery,
+                  },
+        ),
+        { replace: true },
+      )
+    },
+    [currentQuery, navigate, repo.fullName, route],
+  )
 
   const [entries, setEntries] = useState<GitTreeEntry[]>([])
   const [treeError, setTreeError] = useState<string | null>(null)

@@ -3,8 +3,10 @@ import type { TreeNode } from '../../github/tree'
 import {
   DEFAULT_SORT,
   compareEntries,
+  formatSortToken,
   loadSortSettings,
   parseSortSettings,
+  parseSortToken,
   saveSortSettings,
   sortSettingsStorageKey,
   sortTreeChildren,
@@ -60,6 +62,39 @@ describe('sort settings persistence', () => {
 
   it('uses a predictable key', () => {
     expect(sortSettingsStorageKey(REPO)).toBe(`synapse_sort:${REPO}`)
+  })
+})
+
+describe('sort token', () => {
+  it('formats as criterion-direction', () => {
+    expect(formatSortToken({ criterion: 'name', direction: 'asc' })).toBe('name-asc')
+    expect(formatSortToken({ criterion: 'date', direction: 'desc' })).toBe('date-desc')
+  })
+
+  it('parses valid tokens', () => {
+    expect(parseSortToken('name-asc')).toEqual({ criterion: 'name', direction: 'asc' })
+    expect(parseSortToken('date-desc')).toEqual({ criterion: 'date', direction: 'desc' })
+  })
+
+  it('returns null for invalid or missing', () => {
+    expect(parseSortToken(null)).toBeNull()
+    expect(parseSortToken('')).toBeNull()
+    expect(parseSortToken('bogus')).toBeNull()
+    expect(parseSortToken('name')).toBeNull()
+    expect(parseSortToken('name-sideways')).toBeNull()
+    expect(parseSortToken('weird-asc')).toBeNull()
+  })
+
+  it('roundtrips for every combination', () => {
+    const all: SortSettings[] = [
+      { criterion: 'name', direction: 'asc' },
+      { criterion: 'name', direction: 'desc' },
+      { criterion: 'date', direction: 'asc' },
+      { criterion: 'date', direction: 'desc' },
+    ]
+    for (const s of all) {
+      expect(parseSortToken(formatSortToken(s))).toEqual(s)
+    }
   })
 })
 

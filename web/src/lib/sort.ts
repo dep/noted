@@ -45,6 +45,19 @@ export function saveSortSettings(
   storage.setItem(sortSettingsStorageKey(repoFullName), JSON.stringify(settings))
 }
 
+// "name-asc" | "name-desc" | "date-asc" | "date-desc"
+export function formatSortToken(settings: SortSettings): string {
+  return `${settings.criterion}-${settings.direction}`
+}
+
+export function parseSortToken(raw: string | null | undefined): SortSettings | null {
+  if (!raw) return null
+  const [criterion, direction] = raw.split('-')
+  if ((criterion !== 'name' && criterion !== 'date')) return null
+  if (direction !== 'asc' && direction !== 'desc') return null
+  return { criterion, direction }
+}
+
 export type SortableEntry = {
   name: string
   path: string

@@ -58,7 +58,7 @@ export function App() {
     (repo: SelectedRepo) => {
       setResolvedRepo(repo)
       const [owner, name] = repo.fullName.split('/')
-      navigate(formatRoute({ kind: 'repo', owner, repo: name }))
+      navigate(formatRoute({ kind: 'repo', owner, repo: name, query: {} }))
     },
     [navigate],
   )
