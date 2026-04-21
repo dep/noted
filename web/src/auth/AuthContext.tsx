@@ -11,7 +11,7 @@ import { buildGitHubAuthorizeUrl } from '../github/buildAuthorizeUrl'
 import { fetchOAuthScopes } from '../github/gists'
 import { getBasePath, withBase } from '../lib/basePath'
 import {
-  GITHUB_TOKEN_SESSION_KEY,
+  GITHUB_TOKEN_STORAGE_KEY,
   OAUTH_STATE_SESSION_KEY,
   REPO_SELECTION_LOCAL_KEY,
 } from './storageKeys'
@@ -29,9 +29,14 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID ?? ''
   const [token, setToken] = useState<string | null>(() =>
-    sessionStorage.getItem(GITHUB_TOKEN_SESSION_KEY),
+    localStorage.getItem(GITHUB_TOKEN_STORAGE_KEY),
   )
   const [scopes, setScopes] = useState<string[]>([])
+
+  const clearToken = useCallback(() => {
+    localStorage.removeItem(GITHUB_TOKEN_STORAGE_KEY)
+    setToken(null)
+  }, [])
 
   useEffect(() => {
     if (!token) {
@@ -41,12 +46,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     void fetchOAuthScopes(token).then((result) => {
       if (cancelled) return
-      if (result.ok) setScopes(result.scopes)
+      if (result.ok) {
+        setScopes(result.scopes)
+      } else if (/401/.test(result.error)) {
+        // Token is no longer valid — drop it so the user can re-auth.
+        clearToken()
+      }
     })
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [token, clearToken])
 
   const beginGitHubLogin = useCallback(() => {
     if (!clientId) {
@@ -62,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clientId])
 
   const logout = useCallback(() => {
-    sessionStorage.removeItem(GITHUB_TOKEN_SESSION_KEY)
+    localStorage.removeItem(GITHUB_TOKEN_STORAGE_KEY)
     localStorage.removeItem(REPO_SELECTION_LOCAL_KEY)
     setToken(null)
   }, [])

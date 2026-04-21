@@ -3,7 +3,7 @@ import { exchangeCodeForToken } from './exchangeCodeForToken.js'
 
 // Must stay in sync with src/auth/storageKeys.ts. Duplicated here so this
 // Vercel function doesn't import from the Vite app source tree at build time.
-const GITHUB_TOKEN_SESSION_KEY = 'synapse_github_token'
+const GITHUB_TOKEN_STORAGE_KEY = 'synapse_github_token'
 const OAUTH_STATE_SESSION_KEY = 'synapse_oauth_state'
 
 export type OAuthCallbackDeps = {
@@ -75,7 +75,7 @@ function buildOAuthSuccessHtml(
 ): string {
   const tokenLiteral = JSON.stringify(token)
   const stateLiteral = JSON.stringify(state)
-  const tokenKeyLiteral = JSON.stringify(GITHUB_TOKEN_SESSION_KEY)
+  const tokenKeyLiteral = JSON.stringify(GITHUB_TOKEN_STORAGE_KEY)
   const stateKeyLiteral = JSON.stringify(OAUTH_STATE_SESSION_KEY)
   const home = JSON.stringify(basePath)
 
@@ -96,7 +96,7 @@ function buildOAuthSuccessHtml(
       return;
     }
     sessionStorage.removeItem(stateKey);
-    sessionStorage.setItem(tokenKey, token);
+    localStorage.setItem(tokenKey, token);
   } catch (e) {
     document.body.textContent = 'Could not complete sign-in (storage blocked?).';
     return;
