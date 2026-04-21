@@ -81,6 +81,25 @@ describe('parseRoute', () => {
     if (r.kind !== 'repo') throw new Error('expected repo')
     expect(r.query).toEqual({ sort: 'name-asc', x: '1' })
   })
+  it('recognizes /today', () => {
+    expect(parseRoute('/o/r/today')).toEqual({
+      kind: 'today',
+      owner: 'o',
+      repo: 'r',
+      query: {},
+    })
+  })
+
+  it('/today ignores trailing segments', () => {
+    // Any extra segments after /today are dropped; it's a magic path.
+    expect(parseRoute('/o/r/today/whatever')).toEqual({
+      kind: 'today',
+      owner: 'o',
+      repo: 'r',
+      query: {},
+    })
+  })
+
   it('strips hash fragments', () => {
     expect(parseRoute('/o/r?sort=name-asc#deep')).toEqual({
       kind: 'repo',
@@ -133,6 +152,12 @@ describe('formatRoute', () => {
       }),
     ).toBe('/o/r')
   })
+  it('today route formats as /o/r/today', () => {
+    expect(
+      formatRoute({ kind: 'today', owner: 'o', repo: 'r', query: {} }),
+    ).toBe('/o/r/today')
+  })
+
   it('serializes query string, stable key order', () => {
     expect(
       formatRoute({
@@ -143,15 +168,15 @@ describe('formatRoute', () => {
       }),
     ).toBe('/o/r?a=1&sort=date-desc')
   })
-  it('omits empty query values', () => {
+  it('preserves empty string query values (they carry semantic meaning)', () => {
     expect(
       formatRoute({
         kind: 'repo',
         owner: 'o',
         repo: 'r',
-        query: { sort: '' },
+        query: { folder: '' },
       }),
-    ).toBe('/o/r')
+    ).toBe('/o/r?folder=')
   })
 })
 

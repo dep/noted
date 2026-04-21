@@ -10,6 +10,7 @@ import ArrowRightIcon from '@mui/icons-material/ArrowRight'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import type { TreeNode } from '../github/tree'
 import { isMarkdownPath } from '../github/tree'
 import type { PinnedItem } from '../lib/pins'
@@ -20,6 +21,8 @@ import {
   findFolderNode,
   parentFolder,
 } from '../lib/navigator'
+import { folderStyleFor } from '../lib/folderStyle'
+import { StyledFolderIcon } from './FolderIcon'
 
 export type SidebarContextTarget =
   | { kind: 'file'; path: string; name: string }
@@ -36,6 +39,9 @@ export type SidebarProps = {
   onSelectFile: (path: string) => void
   onContextMenu: (target: SidebarContextTarget, event: MouseEvent) => void
   onPinnedClick: (item: PinnedItem) => void
+  onOpenToday: () => void
+  todayLabel: string
+  todayPath: string
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -50,6 +56,9 @@ export function Sidebar(props: SidebarProps) {
     onSelectFile,
     onContextMenu,
     onPinnedClick,
+    onOpenToday,
+    todayLabel,
+    todayPath,
   } = props
 
   const currentNode = useMemo(
@@ -82,6 +91,53 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        spacing={1}
+        onClick={onOpenToday}
+        sx={{
+          px: 1,
+          py: 0.75,
+          cursor: 'pointer',
+          userSelect: 'none',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          bgcolor: activePath === todayPath ? 'action.selected' : 'transparent',
+          '&:hover': { bgcolor: 'action.hover' },
+        }}
+      >
+        <CalendarMonthIcon sx={{ fontSize: 18, color: '#6EA8FE' }} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            Today
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              fontFamily: 'ui-monospace, Menlo, monospace',
+              fontSize: 11,
+              display: 'block',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {todayLabel}
+          </Typography>
+        </Box>
+      </Stack>
+
       {pinnedItems.length > 0 && (
         <PinnedSection
           items={pinnedItems}
@@ -115,6 +171,7 @@ export function Sidebar(props: SidebarProps) {
         <FolderContents
           children={currentChildren}
           activePath={activePath}
+          topLevel={currentFolder === ''}
           onEnterFolder={onNavigateFolder}
           onSelectFile={onSelectFile}
           onContextMenu={onContextMenu}
@@ -345,12 +402,26 @@ function PinnedSection({
               }}
               icon={
                 item.kind === 'folder' ? (
-                  <FolderIcon fontSize="small" />
+                  <StyledFolderIcon
+                    style={folderStyleFor(basename(item.path) || item.path)}
+                  />
                 ) : (
                   <ArticleIcon fontSize="small" color="primary" />
                 )
               }
-              label={basename(item.path) || item.path}
+              label={(() => {
+                const name = basename(item.path) || item.path
+                if (item.kind !== 'folder') return name
+                const style = folderStyleFor(name)
+                return style.emoji && name.startsWith(style.emoji)
+                  ? name.slice(style.emoji.length).trimStart()
+                  : name
+              })()}
+              labelColor={
+                item.kind === 'folder'
+                  ? folderStyleFor(basename(item.path) || item.path).color
+                  : undefined
+              }
             />
           ))}
         </Box>
@@ -362,12 +433,14 @@ function PinnedSection({
 function FolderContents({
   children,
   activePath,
+  topLevel,
   onEnterFolder,
   onSelectFile,
   onContextMenu,
 }: {
   children: TreeNode[]
   activePath: string | null
+  topLevel: boolean
   onEnterFolder: (folder: string) => void
   onSelectFile: (path: string) => void
   onContextMenu: (target: SidebarContextTarget, event: MouseEvent) => void
@@ -385,6 +458,11 @@ function FolderContents({
     <Box sx={{ py: 0.5 }}>
       {children.map((node) => {
         if (node.type === 'tree') {
+          const style = topLevel ? folderStyleFor(node.name) : null
+          const label =
+            style?.emoji && node.name.startsWith(style.emoji)
+              ? node.name.slice(style.emoji.length).trimStart()
+              : node.name
           return (
             <Row
               key={node.path}
@@ -397,9 +475,16 @@ function FolderContents({
                   e,
                 )
               }}
-              icon={<FolderIcon fontSize="small" />}
-              label={node.name}
-              muted
+              icon={
+                style ? (
+                  <StyledFolderIcon style={style} />
+                ) : (
+                  <FolderIcon fontSize="small" />
+                )
+              }
+              label={label}
+              labelColor={style?.color}
+              muted={!style}
               trailing={
                 <ChevronLeftIcon
                   sx={{
@@ -448,6 +533,7 @@ function Row({
   label,
   muted,
   trailing,
+  labelColor,
 }: {
   active: boolean
   onClick: () => void
@@ -456,6 +542,7 @@ function Row({
   label: string
   muted?: boolean
   trailing?: React.ReactNode
+  labelColor?: string
 }) {
   return (
     <Stack
@@ -481,7 +568,7 @@ function Row({
           flex: 1,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: 13,
-          color: muted ? 'text.secondary' : 'text.primary',
+          color: labelColor ?? (muted ? 'text.secondary' : 'text.primary'),
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',

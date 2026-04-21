@@ -47,6 +47,9 @@ const defaultProps = () => {
     onSelectFile: vi.fn(),
     onContextMenu: vi.fn(),
     onPinnedClick: vi.fn(),
+    onOpenToday: vi.fn(),
+    todayLabel: '2026-04-21',
+    todayPath: 'Daily Notes/2026-04-21.md',
   }
 }
 
@@ -110,6 +113,44 @@ describe('<Sidebar /> breadcrumb', () => {
     render(<Sidebar {...props} />)
     await user.click(screen.getByRole('button', { name: 'Root' }))
     expect(props.onNavigateFolder).toHaveBeenCalledWith('')
+  })
+})
+
+describe('<Sidebar /> today row', () => {
+  it('is always rendered above pinned + breadcrumb', () => {
+    render(
+      <Sidebar
+        {...{
+          ...defaultProps(),
+          pinnedItems: [{ path: 'notes', kind: 'folder' as const }],
+        }}
+      />,
+    )
+    const today = screen.getByText('Today')
+    const pinnedHeader = screen.getByText('Pinned')
+    const rootSeg = screen.getByText('Root')
+    expect(
+      today.compareDocumentPosition(pinnedHeader) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      pinnedHeader.compareDocumentPosition(rootSeg) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('calls onOpenToday when clicked', async () => {
+    const user = userEvent.setup()
+    const props = defaultProps()
+    render(<Sidebar {...props} />)
+    await user.click(screen.getByText('Today'))
+    expect(props.onOpenToday).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the date label', () => {
+    const props = { ...defaultProps(), todayLabel: '2026-04-21' }
+    render(<Sidebar {...props} />)
+    expect(screen.getByText('2026-04-21')).toBeInTheDocument()
   })
 })
 

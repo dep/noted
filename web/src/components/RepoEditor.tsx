@@ -53,6 +53,7 @@ import { GistDialog, type GistSubmission } from './GistDialog'
 import { CommandPalette } from './CommandPalette'
 import { collectPaletteItems, type PaletteItem } from '../lib/palette'
 import { buildWikilinkIndex, type WikilinkIndex } from '../lib/wikilinks'
+import { dailyNotePath, formatLocalDate } from '../lib/dailyNote'
 import { canPublishGist, createGist } from '../github/gists'
 import { loadPreviewRatio, savePreviewRatio } from '../lib/previewRatio'
 import { createPinsStore, type PinnedItem } from '../lib/pins'
@@ -122,9 +123,15 @@ export function RepoEditor({
   const [pinnedItems, setPinnedItems] = useState<PinnedItem[]>(() =>
     pinsStore.list(),
   )
-  const currentFolder = routeFolder(route)
   const currentFile = routeFile(route)
   const currentQuery = routeQuery(route)
+  // Sidebar folder is an independent axis of state:
+  //   1. ?folder=... in the URL wins (user drilled while a file was open) —
+  //      key *presence* matters; an empty string means "root".
+  //   2. Otherwise, fall back to the route-derived folder (file's parent, or
+  //      the /tree/... path when no file is open).
+  const currentFolder =
+    'folder' in currentQuery ? currentQuery.folder : routeFolder(route)
 
   // Sort: URL wins, localStorage is the default, DEFAULT_SORT is last resort.
   const sort: SortSettings = useMemo(() => {
@@ -135,17 +142,34 @@ export function RepoEditor({
 
   const navigateToFolder = useCallback(
     (folder: string) => {
+      // If a file is open, keep it open and update ?folder= so the sidebar
+      // drills without closing the note. Always set the key (including empty
+      // string for "root") so it overrides the file's parent fallback.
+      if (route.kind === 'file') {
+        navigate(
+          formatRoute({
+            ...route,
+            query: { ...currentQuery, folder },
+          }),
+          { replace: true },
+        )
+        return
+      }
+      // No file open — nav as before. Strip any lingering ?folder since the
+      // path carries the folder state now.
+      const { folder: _stripped, ...restQuery } = currentQuery
+      void _stripped
       navigate(
         formatRoute({
           kind: 'folder',
           owner,
           repo: repoName,
           folder,
-          query: currentQuery,
+          query: restQuery,
         }),
       )
     },
-    [navigate, owner, repoName, currentQuery],
+    [navigate, owner, repoName, currentQuery, route],
   )
 
   const navigateToFile = useCallback(
@@ -172,32 +196,7 @@ export function RepoEditor({
       }
       // Replace, not push — sort is a preference, not a navigation.
       navigate(
-        formatRoute(
-          route.kind === 'picker'
-            ? { kind: 'picker', query: nextQuery }
-            : route.kind === 'repo'
-              ? {
-                  kind: 'repo',
-                  owner: route.owner,
-                  repo: route.repo,
-                  query: nextQuery,
-                }
-              : route.kind === 'folder'
-                ? {
-                    kind: 'folder',
-                    owner: route.owner,
-                    repo: route.repo,
-                    folder: route.folder,
-                    query: nextQuery,
-                  }
-                : {
-                    kind: 'file',
-                    owner: route.owner,
-                    repo: route.repo,
-                    file: route.file,
-                    query: nextQuery,
-                  },
-        ),
+        formatRoute({ ...route, query: nextQuery }),
         { replace: true },
       )
     },
@@ -567,6 +566,130 @@ export function RepoEditor({
     },
     [handleSelectFile, navigateToFolder],
   )
+
+  const todayPath = useMemo(() => dailyNotePath(), [])
+  const todayLabel = useMemo(() => formatLocalDate(new Date()), [])
+
+  const handleOpenToday = useCallback(async () => {
+    if (!token || !parsed) return
+    // Ask GitHub directly whether the file exists. Our in-memory tree can be
+    // stale (another tab/session created the note after our last loadTree()).
+    const existing = await fetchFileContent(
+      token,
+      parsed.owner,
+      parsed.repo,
+      todayPath,
+      repo.defaultBranch,
+    )
+    if (existing.ok) {
+      // Already exists — just open it.
+      handleSelectFile(todayPath)
+      return
+    }
+    // Assume 404 → create it. putFileContent returns a 422 if we were wrong,
+    // which surfaces as a readable error.
+    const created = await putFileContent(
+      token,
+      parsed.owner,
+      parsed.repo,
+      todayPath,
+      {
+        content: '',
+        message: defaultCommitMessage('create', todayPath),
+        branch: repo.defaultBranch,
+      },
+    )
+    if (!created.ok) {
+      setSaveError(created.error)
+      return
+    }
+    await loadTree()
+    handleSelectFile(todayPath)
+  }, [
+    token,
+    parsed,
+    repo.defaultBranch,
+    todayPath,
+    handleSelectFile,
+    loadTree,
+  ])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Require BOTH Ctrl and Cmd (e.g. Ctrl+Cmd+H on macOS) so it doesn't
+      // collide with the browser's Cmd+H (hide window) or Ctrl+H (history).
+      const both = e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey
+      if (!both) return
+      if (e.key !== 'h' && e.key !== 'H') return
+      e.preventDefault()
+      void handleOpenToday()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleOpenToday])
+
+  // Resolve /:owner/:repo/today → /:owner/:repo/blob/Daily Notes/YYYY-MM-DD.md
+  // using replaceState so /today doesn't sit in back-history.
+  const todayResolvingRef = useRef(false)
+  useEffect(() => {
+    if (route.kind !== 'today') return
+    if (!token || !parsed) return
+    if (todayResolvingRef.current) return
+    todayResolvingRef.current = true
+    const run = async () => {
+      try {
+        const existing = await fetchFileContent(
+          token,
+          parsed.owner,
+          parsed.repo,
+          todayPath,
+          repo.defaultBranch,
+        )
+        if (!existing.ok) {
+          const created = await putFileContent(
+            token,
+            parsed.owner,
+            parsed.repo,
+            todayPath,
+            {
+              content: '',
+              message: defaultCommitMessage('create', todayPath),
+              branch: repo.defaultBranch,
+            },
+          )
+          if (!created.ok) {
+            setSaveError(created.error)
+            return
+          }
+          await loadTree()
+        }
+        navigate(
+          formatRoute({
+            kind: 'file',
+            owner,
+            repo: repoName,
+            file: todayPath,
+            query: currentQuery,
+          }),
+          { replace: true },
+        )
+      } finally {
+        todayResolvingRef.current = false
+      }
+    }
+    void run()
+  }, [
+    route.kind,
+    token,
+    parsed,
+    todayPath,
+    loadTree,
+    navigate,
+    owner,
+    repoName,
+    currentQuery,
+    repo.defaultBranch,
+  ])
 
   // Dialog confirmations
   const handleDialogConfirm = useCallback(
@@ -1081,6 +1204,9 @@ export function RepoEditor({
                 onSelectFile={handleSelectFile}
                 onContextMenu={handleContextMenu}
                 onPinnedClick={handlePinnedClick}
+                onOpenToday={() => void handleOpenToday()}
+                todayLabel={todayLabel}
+                todayPath={todayPath}
               />
             </>
           )}

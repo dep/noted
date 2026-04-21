@@ -17,6 +17,7 @@ export type Route =
       file: string
       query: RouteQuery
     }
+  | { kind: 'today'; owner: string; repo: string; query: RouteQuery }
 
 function stripSlashes(s: string): string {
   return s.replace(/^\/+|\/+$/g, '')
@@ -64,7 +65,7 @@ function formatQuery(query: RouteQuery): string {
   const parts: string[] = []
   for (const k of keys) {
     const v = query[k]
-    if (v === '' || v == null) continue
+    if (v == null) continue
     parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
   }
   return parts.length === 0 ? '' : `?${parts.join('&')}`
@@ -83,6 +84,9 @@ export function parseRoute(input: string): Route {
   if (maybeKind === 'blob') {
     if (rest.length === 0) return { kind: 'repo', owner, repo, query }
     return { kind: 'file', owner, repo, file: rest.join('/'), query }
+  }
+  if (maybeKind === 'today') {
+    return { kind: 'today', owner, repo, query }
   }
   return { kind: 'repo', owner, repo, query }
 }
@@ -105,6 +109,8 @@ export function formatRoute(route: Route): string {
     }
     case 'file':
       return `/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.repo)}/blob/${encodeSegments(route.file)}${qs}`
+    case 'today':
+      return `/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.repo)}/today${qs}`
   }
 }
 
@@ -119,6 +125,7 @@ export function routeFolder(route: Route): string {
     const slash = route.file.lastIndexOf('/')
     return slash >= 0 ? route.file.slice(0, slash) : ''
   }
+  if (route.kind === 'today') return 'Daily Notes'
   return ''
 }
 
