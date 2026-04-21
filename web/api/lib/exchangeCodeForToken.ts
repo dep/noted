@@ -27,10 +27,16 @@ export async function exchangeCodeForToken(
     body,
   })
 
-  const data = (await res.json()) as {
+  const raw = await res.text()
+  let data: {
     access_token?: string
     error?: string
     error_description?: string
+  } = {}
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    // Non-JSON response — fall through with empty data and surface the body.
   }
 
   if (data.access_token) {
@@ -40,6 +46,6 @@ export async function exchangeCodeForToken(
   const message =
     data.error_description ??
     data.error ??
-    `GitHub token exchange failed (${res.status})`
+    `GitHub token exchange failed (${res.status}): ${raw.slice(0, 200)}`
   return { ok: false, error: message }
 }

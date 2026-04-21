@@ -1,9 +1,10 @@
-import type { ExchangeCodeResult } from './exchangeCodeForToken'
-import { exchangeCodeForToken } from './exchangeCodeForToken'
-import {
-  GITHUB_TOKEN_SESSION_KEY,
-  OAUTH_STATE_SESSION_KEY,
-} from '../../src/auth/storageKeys'
+import type { ExchangeCodeResult } from './exchangeCodeForToken.js'
+import { exchangeCodeForToken } from './exchangeCodeForToken.js'
+
+// Must stay in sync with src/auth/storageKeys.ts. Duplicated here so this
+// Vercel function doesn't import from the Vite app source tree at build time.
+const GITHUB_TOKEN_SESSION_KEY = 'opus_github_token'
+const OAUTH_STATE_SESSION_KEY = 'opus_oauth_state'
 
 export type OAuthCallbackDeps = {
   clientId: string
