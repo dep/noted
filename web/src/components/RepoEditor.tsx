@@ -13,6 +13,10 @@ import {
   Button,
   CircularProgress,
   IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Toolbar,
   Tooltip,
   Typography,
@@ -26,6 +30,7 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import MenuOpenIcon from '@mui/icons-material/MenuOpen'
 import MenuIcon from '@mui/icons-material/Menu'
 import IosShareIcon from '@mui/icons-material/IosShare'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import { useAuth } from '../auth/AuthContext'
 import { parseRepoFullName } from '../github/parseRepoFullName'
 import {
@@ -240,6 +245,7 @@ export function RepoEditor({
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
+  const [overflowAnchor, setOverflowAnchor] = useState<HTMLElement | null>(null)
   const [dialog, setDialog] = useState<DialogState>({ kind: 'none' })
   const [dialogBusy, setDialogBusy] = useState(false)
   const [dialogError, setDialogError] = useState<string | null>(null)
@@ -751,12 +757,15 @@ export function RepoEditor({
     <Box
       sx={{
         height: '100vh',
+        width: '100vw',
+        maxWidth: '100%',
+        overflow: 'hidden',
         display: 'grid',
         gridTemplateRows: 'auto 1fr',
       }}
     >
       <AppBar position="static" color="default" elevation={0}>
-        <Toolbar variant="dense" sx={{ gap: 1 }}>
+        <Toolbar variant="dense" sx={{ gap: 1, minWidth: 0 }}>
           <Tooltip title={sidebarVisible ? 'Hide sidebar' : 'Show sidebar'}>
             <IconButton
               size="small"
@@ -773,16 +782,40 @@ export function RepoEditor({
           <Typography
             variant="subtitle1"
             fontWeight={700}
-            sx={{ fontFamily: 'ui-monospace, Menlo, monospace' }}
+            sx={{
+              fontFamily: 'ui-monospace, Menlo, monospace',
+              minWidth: 0,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
           >
             {repo.fullName}
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              display: { xs: 'none', sm: 'inline' },
+              whiteSpace: 'nowrap',
+            }}
+          >
             branch: {repo.defaultBranch}
           </Typography>
           <Box flex={1} />
           {activeFile && (
-            <Typography variant="caption" sx={{ mr: 1 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                mr: 1,
+                minWidth: 0,
+                maxWidth: { xs: 120, sm: 240, md: 400 },
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: { xs: 'none', sm: 'inline-block' },
+              }}
+            >
               {activeFile.path}
               {dirty && ' • unsaved'}
               {saving && ' • saving…'}
@@ -808,31 +841,33 @@ export function RepoEditor({
               </IconButton>
             </Tooltip>
           )}
-          <Tooltip
-            title={
-              gistAllowed
-                ? 'Publish as gist'
-                : 'Re-authorize with gist scope to enable'
-            }
-          >
-            <span>
-              <IconButton
-                size="small"
-                onClick={() => {
-                  setGistError(null)
-                  setGistOpen(true)
-                }}
-                disabled={
-                  !gistAllowed ||
-                  !activeFile ||
-                  activeFile.encoding === 'binary'
-                }
-                aria-label="publish as gist"
-              >
-                <IosShareIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+          <Box sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
+            <Tooltip
+              title={
+                gistAllowed
+                  ? 'Publish as gist'
+                  : 'Re-authorize with gist scope to enable'
+              }
+            >
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    setGistError(null)
+                    setGistOpen(true)
+                  }}
+                  disabled={
+                    !gistAllowed ||
+                    !activeFile ||
+                    activeFile.encoding === 'binary'
+                  }
+                  aria-label="publish as gist"
+                >
+                  <IosShareIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
           <Tooltip title="Save (⌘S)">
             <span>
               <Button
@@ -851,18 +886,96 @@ export function RepoEditor({
               </Button>
             </span>
           </Tooltip>
-          <Tooltip title="Switch repo">
-            <IconButton size="small" onClick={onChangeRepo}>
-              <SwapHorizIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Sign out">
-            <IconButton size="small" onClick={logout}>
-              <LogoutIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <Box sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
+            <Tooltip title="Switch repo">
+              <IconButton size="small" onClick={onChangeRepo}>
+                <SwapHorizIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Sign out">
+              <IconButton size="small" onClick={logout}>
+                <LogoutIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+          <Box sx={{ display: { xs: 'inline-flex', sm: 'none' } }}>
+            <Tooltip title="More">
+              <IconButton
+                size="small"
+                onClick={(e) => setOverflowAnchor(e.currentTarget)}
+                aria-label="more"
+              >
+                <MoreVertIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Toolbar>
       </AppBar>
+
+      <Menu
+        open={Boolean(overflowAnchor)}
+        anchorEl={overflowAnchor}
+        onClose={() => setOverflowAnchor(null)}
+      >
+        {activeFile && (
+          <MenuItem disabled sx={{ opacity: '1 !important' }}>
+            <ListItemText
+              primary={activeFile.path}
+              secondary={`branch: ${repo.defaultBranch}`}
+              primaryTypographyProps={{
+                fontSize: 13,
+                fontFamily: 'ui-monospace, Menlo, monospace',
+                sx: {
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: 260,
+                },
+              }}
+              secondaryTypographyProps={{ fontSize: 11 }}
+            />
+          </MenuItem>
+        )}
+        <MenuItem
+          disabled={
+            !gistAllowed || !activeFile || activeFile.encoding === 'binary'
+          }
+          onClick={() => {
+            setOverflowAnchor(null)
+            setGistError(null)
+            setGistOpen(true)
+          }}
+        >
+          <ListItemIcon>
+            <IosShareIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary={gistAllowed ? 'Publish as gist' : 'Gist (re-auth needed)'}
+          />
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setOverflowAnchor(null)
+            onChangeRepo()
+          }}
+        >
+          <ListItemIcon>
+            <SwapHorizIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Switch repo" />
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setOverflowAnchor(null)
+            logout()
+          }}
+        >
+          <ListItemIcon>
+            <LogoutIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Sign out" />
+        </MenuItem>
+      </Menu>
 
       <Box
         sx={{
@@ -943,21 +1056,28 @@ export function RepoEditor({
           )}
         </Box>
 
-        <EditorPane
-          loading={fileLoading}
-          file={activeFile}
-          fileError={fileError}
-          isMarkdown={isMarkdown}
-          previewVisible={previewVisible}
-          mobile={mobile}
-          previewRatio={previewRatio}
-          wikilinkIndex={wikilinkIndex}
-          onRatioChange={handleRatioChange}
-          onWikilinkClick={handleSelectFile}
-          onContentChange={(next) =>
-            setActiveFile((prev) => (prev ? { ...prev, content: next } : prev))
-          }
-        />
+        <Box
+          sx={{ overflow: 'hidden', minWidth: 0 }}
+          onMouseDownCapture={() => {
+            if (mobile && sidebarVisible) setSidebarOverride(false)
+          }}
+        >
+          <EditorPane
+            loading={fileLoading}
+            file={activeFile}
+            fileError={fileError}
+            isMarkdown={isMarkdown}
+            previewVisible={previewVisible}
+            mobile={mobile}
+            previewRatio={previewRatio}
+            wikilinkIndex={wikilinkIndex}
+            onRatioChange={handleRatioChange}
+            onWikilinkClick={handleSelectFile}
+            onContentChange={(next) =>
+              setActiveFile((prev) => (prev ? { ...prev, content: next } : prev))
+            }
+          />
+        </Box>
       </Box>
 
       <ContextMenu
