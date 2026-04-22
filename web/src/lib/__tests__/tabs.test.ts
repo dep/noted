@@ -160,7 +160,7 @@ describe('findTabByPath / activeTab', () => {
 })
 
 describe('persistence', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => localStorage.clear?.())
 
   it('roundtrips', () => {
     let s = openInActive(EMPTY_TABS, 'a.md')

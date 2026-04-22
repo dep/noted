@@ -37,7 +37,7 @@ describe('parseRatio', () => {
 })
 
 describe('persistence', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => localStorage.clear?.())
 
   it('roundtrips', () => {
     savePreviewRatio('o/r', 0.4)

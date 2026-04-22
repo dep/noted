@@ -7,7 +7,7 @@ import {
 } from '../anthropicKey'
 
 describe('Anthropic key storage', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => localStorage.clear?.())
 
   it('returns null when unset', () => {
     expect(loadAnthropicKey()).toBeNull()

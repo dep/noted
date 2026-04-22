@@ -43,7 +43,7 @@ describe('parseSortSettings', () => {
 })
 
 describe('sort settings persistence', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => localStorage.clear?.())
 
   it('returns defaults for an unknown repo', () => {
     expect(loadSortSettings(REPO)).toEqual(DEFAULT_SORT)

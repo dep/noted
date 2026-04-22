@@ -32,6 +32,7 @@ import MenuIcon from '@mui/icons-material/Menu'
 import IosShareIcon from '@mui/icons-material/IosShare'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import SettingsIcon from '@mui/icons-material/Settings'
+import HistoryIcon from '@mui/icons-material/History'
 import { useAuth } from '../auth/AuthContext'
 import { parseRepoFullName } from '../github/parseRepoFullName'
 import {
@@ -55,6 +56,7 @@ import { PromptDialog } from './PromptDialog'
 import { ConfirmDialog } from './ConfirmDialog'
 import { SplitPane } from './SplitPane'
 import { GistDialog, type GistSubmission } from './GistDialog'
+import { FileHistory } from './FileHistory'
 import { CommandPalette } from './CommandPalette'
 import { collectPaletteItems, type PaletteItem } from '../lib/palette'
 import { buildWikilinkIndex, type WikilinkIndex } from '../lib/wikilinks'
@@ -69,7 +71,14 @@ import {
 } from './AskClaude'
 import { editSelection } from '../anthropic/editSelection'
 import { generateAtCursor } from '../anthropic/generateAtCursor'
+import { buildMentionContext, parseMentions } from '../anthropic/mentions'
 import { loadAnthropicKey, saveAnthropicKey } from '../lib/anthropicKey'
+import {
+  isHidden,
+  loadHiddenPaths,
+  parseHiddenPatterns,
+  saveHiddenPaths,
+} from '../lib/hiddenPaths'
 import {
   activateByIndex,
   activeTab as activeTabOf,
@@ -292,6 +301,7 @@ export function RepoEditor({
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
   const [overflowAnchor, setOverflowAnchor] = useState<HTMLElement | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [dialog, setDialog] = useState<DialogState>({ kind: 'none' })
   const [dialogBusy, setDialogBusy] = useState(false)
   const [dialogError, setDialogError] = useState<string | null>(null)
@@ -335,6 +345,11 @@ export function RepoEditor({
   const [anthropicKey, setAnthropicKey] = useState<string | null>(() =>
     loadAnthropicKey(),
   )
+  const [hiddenPathsRaw, setHiddenPathsRaw] = useState(() => loadHiddenPaths())
+  const hiddenPatterns = useMemo(
+    () => parseHiddenPatterns(hiddenPathsRaw),
+    [hiddenPathsRaw],
+  )
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const loadTree = useCallback(async () => {
@@ -360,7 +375,15 @@ export function RepoEditor({
     void loadTree()
   }, [loadTree])
 
-  const tree = useMemo(() => buildTree(entries), [entries])
+  const visibleEntries = useMemo(
+    () => entries.filter((e) => !isHidden(e.path, hiddenPatterns)),
+    [entries, hiddenPatterns],
+  )
+  const tree = useMemo(() => buildTree(visibleEntries), [visibleEntries])
+  const filePaths = useMemo(
+    () => visibleEntries.filter((e) => e.type === 'blob').map((e) => e.path),
+    [visibleEntries],
+  )
 
   useEffect(() => {
     if (
@@ -1185,10 +1208,35 @@ export function RepoEditor({
       }
       setAskBusy(true)
       setAskError(null)
+
+      // Resolve @mentions: fetch each referenced file and inject as context.
+      let resolvedInstruction = instruction
+      const mentionPaths = parseMentions(instruction)
+      if (mentionPaths.length > 0 && parsed && token) {
+        const resolvedToken = token
+        const resolved: Record<string, string> = {}
+        await Promise.all(
+          mentionPaths.map(async (path) => {
+            const result = await fetchFileContent(
+              resolvedToken,
+              parsed.owner,
+              parsed.repo,
+              path,
+              repo.defaultBranch,
+            )
+            if (result.ok) resolved[path] = result.content
+          }),
+        )
+        const mentionCtx = buildMentionContext(resolved)
+        if (mentionCtx) {
+          resolvedInstruction = `Referenced files:\n\n${mentionCtx}\n\n${instruction}`
+        }
+      }
+
       if (anchor.mode === 'rewrite') {
         const result = await editSelection({
           apiKey: anthropicKey,
-          instruction,
+          instruction: resolvedInstruction,
           selection: anchor.text,
           documentContext: file.content,
         })
@@ -1205,7 +1253,7 @@ export function RepoEditor({
       } else {
         const result = await generateAtCursor({
           apiKey: anthropicKey,
-          instruction,
+          instruction: resolvedInstruction,
           document: file.content,
           cursorOffset: anchor.offset,
         })
@@ -1218,7 +1266,7 @@ export function RepoEditor({
       }
       setAskOpen(false)
     },
-    [anthropicKey, askAnchor],
+    [anthropicKey, askAnchor, parsed, repo.defaultBranch, token],
   )
 
   // ⌘J / Ctrl-J opens Ask Claude. Selection present → rewrite; empty → insert
@@ -1334,42 +1382,6 @@ export function RepoEditor({
               </IconButton>
             </Tooltip>
           )}
-          <Box sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
-            <Tooltip title="Settings">
-              <IconButton
-                size="small"
-                onClick={() => setSettingsOpen(true)}
-                aria-label="settings"
-              >
-                <SettingsIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip
-              title={
-                gistAllowed
-                  ? 'Publish as gist'
-                  : 'Re-authorize with gist scope to enable'
-              }
-            >
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    setGistError(null)
-                    setGistOpen(true)
-                  }}
-                  disabled={
-                    !gistAllowed ||
-                    !activeFile ||
-                    activeFile.encoding === 'binary'
-                  }
-                  aria-label="publish as gist"
-                >
-                  <IosShareIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Box>
           <Tooltip title="Save (⌘S)">
             <span>
               <Button
@@ -1388,19 +1400,7 @@ export function RepoEditor({
               </Button>
             </span>
           </Tooltip>
-          <Box sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
-            <Tooltip title="Switch repo">
-              <IconButton size="small" onClick={onChangeRepo}>
-                <SwapHorizIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Sign out">
-              <IconButton size="small" onClick={logout}>
-                <LogoutIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
-          <Box sx={{ display: { xs: 'inline-flex', sm: 'none' } }}>
+          <Box>
             <Tooltip title="More">
               <IconButton
                 size="small"
@@ -1438,6 +1438,18 @@ export function RepoEditor({
             />
           </MenuItem>
         )}
+        <MenuItem
+          disabled={!active}
+          onClick={() => {
+            setOverflowAnchor(null)
+            setHistoryOpen(true)
+          }}
+        >
+          <ListItemIcon>
+            <HistoryIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="File history" />
+        </MenuItem>
         <MenuItem
           disabled={
             !gistAllowed || !activeFile || activeFile.encoding === 'binary'
@@ -1744,6 +1756,7 @@ export function RepoEditor({
         hasApiKey={Boolean(anthropicKey)}
         busy={askBusy}
         error={askError}
+        filePaths={filePaths}
         onSubmit={handleAskSubmit}
         onClose={() => setAskOpen(false)}
         onOpenSettings={() => {
@@ -1755,12 +1768,30 @@ export function RepoEditor({
       <SettingsDialog
         open={settingsOpen}
         initialKey={anthropicKey ?? ''}
-        onSave={(k) => {
+        initialHiddenPaths={hiddenPathsRaw}
+        onSave={(k, hidden) => {
           saveAnthropicKey(k)
           setAnthropicKey(k.trim() || null)
+          saveHiddenPaths(hidden)
+          setHiddenPathsRaw(hidden)
         }}
         onClose={() => setSettingsOpen(false)}
       />
+
+      {parsed && activeFile && token && (
+        <FileHistory
+          open={historyOpen}
+          token={token}
+          owner={parsed.owner}
+          repo={parsed.repo}
+          branch={repo.defaultBranch}
+          filePath={activeFile.path}
+          onApply={(content) => {
+            updateActiveFile((prev) => ({ ...prev, content }))
+          }}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
     </Box>
   )
 }
