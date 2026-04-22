@@ -235,3 +235,81 @@ export async function deleteFileContent(
 function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/')
 }
+
+export type FileCommit = {
+  sha: string
+  message: string
+  date: string
+  author: string
+}
+
+export type FetchFileCommitsResult =
+  | { ok: true; commits: FileCommit[] }
+  | { ok: false; error: string }
+
+export async function fetchFileCommits(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  branch: string,
+): Promise<FetchFileCommitsResult> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodePath(path)}&sha=${encodeURIComponent(branch)}&per_page=30`,
+    { headers: GH_HEADERS(token) },
+  )
+  if (!res.ok) {
+    return { ok: false, error: `Commits request failed (${res.status})` }
+  }
+  const data = (await res.json()) as Array<{
+    sha?: string
+    commit?: {
+      message?: string
+      author?: { date?: string; name?: string }
+    }
+  }>
+  const commits: FileCommit[] = data
+    .filter((c) => c.sha && c.commit)
+    .map((c) => ({
+      sha: c.sha!,
+      message: c.commit!.message?.split('\n')[0] ?? '',
+      date: c.commit!.author?.date ?? '',
+      author: c.commit!.author?.name ?? '',
+    }))
+  return { ok: true, commits }
+}
+
+export async function fetchFileAtCommit(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  commitSha: string,
+): Promise<FetchFileResult> {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${encodePath(path)}?ref=${encodeURIComponent(commitSha)}`,
+    { headers: GH_HEADERS(token) },
+  )
+  if (!res.ok) {
+    return { ok: false, error: `File at commit request failed (${res.status})` }
+  }
+  const data = (await res.json()) as {
+    content?: string
+    encoding?: string
+    sha?: string
+    type?: string
+  }
+  if (!data.sha) return { ok: false, error: 'File response missing sha.' }
+  if (data.content == null || data.encoding !== 'base64') {
+    return { ok: false, error: 'Unsupported file encoding.' }
+  }
+  try {
+    const text = decodeBase64Utf8(data.content)
+    if (text.includes(' ')) {
+      return { ok: true, content: '', sha: data.sha, encoding: 'binary' }
+    }
+    return { ok: true, content: text, sha: data.sha, encoding: 'utf-8' }
+  } catch {
+    return { ok: true, content: '', sha: data.sha, encoding: 'binary' }
+  }
+}

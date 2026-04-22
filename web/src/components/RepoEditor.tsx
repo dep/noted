@@ -32,6 +32,7 @@ import MenuIcon from '@mui/icons-material/Menu'
 import IosShareIcon from '@mui/icons-material/IosShare'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import SettingsIcon from '@mui/icons-material/Settings'
+import HistoryIcon from '@mui/icons-material/History'
 import { useAuth } from '../auth/AuthContext'
 import { parseRepoFullName } from '../github/parseRepoFullName'
 import {
@@ -55,6 +56,7 @@ import { PromptDialog } from './PromptDialog'
 import { ConfirmDialog } from './ConfirmDialog'
 import { SplitPane } from './SplitPane'
 import { GistDialog, type GistSubmission } from './GistDialog'
+import { FileHistory } from './FileHistory'
 import { CommandPalette } from './CommandPalette'
 import { collectPaletteItems, type PaletteItem } from '../lib/palette'
 import { buildWikilinkIndex, type WikilinkIndex } from '../lib/wikilinks'
@@ -293,6 +295,7 @@ export function RepoEditor({
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
   const [overflowAnchor, setOverflowAnchor] = useState<HTMLElement | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [dialog, setDialog] = useState<DialogState>({ kind: 'none' })
   const [dialogBusy, setDialogBusy] = useState(false)
   const [dialogError, setDialogError] = useState<string | null>(null)
@@ -1194,12 +1197,13 @@ export function RepoEditor({
       // Resolve @mentions: fetch each referenced file and inject as context.
       let resolvedInstruction = instruction
       const mentionPaths = parseMentions(instruction)
-      if (mentionPaths.length > 0 && parsed) {
+      if (mentionPaths.length > 0 && parsed && token) {
+        const resolvedToken = token
         const resolved: Record<string, string> = {}
         await Promise.all(
           mentionPaths.map(async (path) => {
             const result = await fetchFileContent(
-              token,
+              resolvedToken,
               parsed.owner,
               parsed.repo,
               path,
@@ -1363,42 +1367,6 @@ export function RepoEditor({
               </IconButton>
             </Tooltip>
           )}
-          <Box sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
-            <Tooltip title="Settings">
-              <IconButton
-                size="small"
-                onClick={() => setSettingsOpen(true)}
-                aria-label="settings"
-              >
-                <SettingsIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip
-              title={
-                gistAllowed
-                  ? 'Publish as gist'
-                  : 'Re-authorize with gist scope to enable'
-              }
-            >
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    setGistError(null)
-                    setGistOpen(true)
-                  }}
-                  disabled={
-                    !gistAllowed ||
-                    !activeFile ||
-                    activeFile.encoding === 'binary'
-                  }
-                  aria-label="publish as gist"
-                >
-                  <IosShareIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Box>
           <Tooltip title="Save (⌘S)">
             <span>
               <Button
@@ -1417,19 +1385,7 @@ export function RepoEditor({
               </Button>
             </span>
           </Tooltip>
-          <Box sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
-            <Tooltip title="Switch repo">
-              <IconButton size="small" onClick={onChangeRepo}>
-                <SwapHorizIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Sign out">
-              <IconButton size="small" onClick={logout}>
-                <LogoutIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
-          <Box sx={{ display: { xs: 'inline-flex', sm: 'none' } }}>
+          <Box>
             <Tooltip title="More">
               <IconButton
                 size="small"
@@ -1467,6 +1423,18 @@ export function RepoEditor({
             />
           </MenuItem>
         )}
+        <MenuItem
+          disabled={!active}
+          onClick={() => {
+            setOverflowAnchor(null)
+            setHistoryOpen(true)
+          }}
+        >
+          <ListItemIcon>
+            <HistoryIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="File history" />
+        </MenuItem>
         <MenuItem
           disabled={
             !gistAllowed || !activeFile || activeFile.encoding === 'binary'
@@ -1791,6 +1759,21 @@ export function RepoEditor({
         }}
         onClose={() => setSettingsOpen(false)}
       />
+
+      {parsed && activeFile && token && (
+        <FileHistory
+          open={historyOpen}
+          token={token}
+          owner={parsed.owner}
+          repo={parsed.repo}
+          branch={repo.defaultBranch}
+          filePath={activeFile.path}
+          onApply={(content) => {
+            updateActiveFile((prev) => ({ ...prev, content }))
+          }}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
     </Box>
   )
 }
