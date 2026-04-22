@@ -129,7 +129,7 @@ export async function fetchFileContent(
   if (!data.sha) {
     return { ok: false, error: 'File response missing sha.' }
   }
-  if (!data.content || data.encoding !== 'base64') {
+  if (data.content == null || data.encoding !== 'base64') {
     return { ok: false, error: 'Unsupported file encoding.' }
   }
   try {

@@ -69,6 +69,7 @@ import {
 } from './AskClaude'
 import { editSelection } from '../anthropic/editSelection'
 import { generateAtCursor } from '../anthropic/generateAtCursor'
+import { buildMentionContext, parseMentions } from '../anthropic/mentions'
 import { loadAnthropicKey, saveAnthropicKey } from '../lib/anthropicKey'
 import {
   activateByIndex,
@@ -361,6 +362,10 @@ export function RepoEditor({
   }, [loadTree])
 
   const tree = useMemo(() => buildTree(entries), [entries])
+  const filePaths = useMemo(
+    () => entries.filter((e) => e.type === 'blob').map((e) => e.path),
+    [entries],
+  )
 
   useEffect(() => {
     if (
@@ -1185,10 +1190,34 @@ export function RepoEditor({
       }
       setAskBusy(true)
       setAskError(null)
+
+      // Resolve @mentions: fetch each referenced file and inject as context.
+      let resolvedInstruction = instruction
+      const mentionPaths = parseMentions(instruction)
+      if (mentionPaths.length > 0 && parsed) {
+        const resolved: Record<string, string> = {}
+        await Promise.all(
+          mentionPaths.map(async (path) => {
+            const result = await fetchFileContent(
+              token,
+              parsed.owner,
+              parsed.repo,
+              path,
+              repo.defaultBranch,
+            )
+            if (result.ok) resolved[path] = result.content
+          }),
+        )
+        const mentionCtx = buildMentionContext(resolved)
+        if (mentionCtx) {
+          resolvedInstruction = `Referenced files:\n\n${mentionCtx}\n\n${instruction}`
+        }
+      }
+
       if (anchor.mode === 'rewrite') {
         const result = await editSelection({
           apiKey: anthropicKey,
-          instruction,
+          instruction: resolvedInstruction,
           selection: anchor.text,
           documentContext: file.content,
         })
@@ -1205,7 +1234,7 @@ export function RepoEditor({
       } else {
         const result = await generateAtCursor({
           apiKey: anthropicKey,
-          instruction,
+          instruction: resolvedInstruction,
           document: file.content,
           cursorOffset: anchor.offset,
         })
@@ -1218,7 +1247,7 @@ export function RepoEditor({
       }
       setAskOpen(false)
     },
-    [anthropicKey, askAnchor],
+    [anthropicKey, askAnchor, parsed, repo.defaultBranch, token],
   )
 
   // ⌘J / Ctrl-J opens Ask Claude. Selection present → rewrite; empty → insert
@@ -1744,6 +1773,7 @@ export function RepoEditor({
         hasApiKey={Boolean(anthropicKey)}
         busy={askBusy}
         error={askError}
+        filePaths={filePaths}
         onSubmit={handleAskSubmit}
         onClose={() => setAskOpen(false)}
         onOpenSettings={() => {

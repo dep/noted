@@ -46,7 +46,7 @@ describe('parsePins', () => {
 })
 
 describe('createPinsStore', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => localStorage.clear?.())
 
   it('starts empty', () => {
     expect(createPinsStore(REPO).list()).toEqual([])
