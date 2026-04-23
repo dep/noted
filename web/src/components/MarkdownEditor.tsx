@@ -6,7 +6,7 @@ import {
 } from 'react'
 import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, deleteLine } from '@codemirror/commands'
 import {
   bracketMatching,
   defaultHighlightStyle,
@@ -70,7 +70,7 @@ export const MarkdownEditor = forwardRef<
       bracketMatching(),
       highlightActiveLine(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      keymap.of([...defaultKeymap, ...historyKeymap, { key: 'Mod-Shift-k', run: deleteLine }]),
       oneDark,
       EditorView.lineWrapping,
       EditorView.theme({

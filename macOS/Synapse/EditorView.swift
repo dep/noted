@@ -2813,6 +2813,28 @@ class LinkAwareTextView: NSTextView {
                 return true
             }
         }
+        // CMD-Shift-K: delete the active line.
+        if flags == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "k" {
+            let cursor = selectedRange().location
+            guard cursor != NSNotFound else { return false }
+            let nsText = string as NSString
+            let lineRange = nsText.lineRange(for: NSRange(location: cursor, length: 0))
+            var deletionRange = lineRange
+            var cursorPos = lineRange.location
+            if lineRange.length > 0 {
+                let lastChar = nsText.substring(with: NSRange(location: lineRange.location + lineRange.length - 1, length: 1))
+                if lastChar != "\n" && lastChar != "\r\n" && lineRange.location > 0 {
+                    deletionRange = NSRange(location: lineRange.location - 1, length: lineRange.length + 1)
+                    cursorPos = lineRange.location - 1
+                }
+            }
+            if shouldChangeText(in: deletionRange, replacementString: "") {
+                replaceCharacters(in: deletionRange, with: "")
+                didChangeText()
+                setSelectedRange(NSRange(location: cursorPos, length: 0))
+            }
+            return true
+        }
         return super.performKeyEquivalent(with: event)
     }
 
