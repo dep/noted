@@ -350,6 +350,12 @@ class AppState: ObservableObject {
             name: .commandKPressed,
             object: nil
         )
+
+        // Reopen the previously opened vault on launch. Skipped under tests so unit tests
+        // that construct AppState() don't accidentally open a user's real vault.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            restoreLastVaultIfAvailable()
+        }
     }
 
     @objc private func handleCommandK() {
@@ -1518,6 +1524,9 @@ class AppState: ObservableObject {
 
         rootURL = standardized(url)
 
+        // Remember this vault so the next launch can re-open it automatically.
+        UserDefaults.standard.set(standardized(url).path, forKey: AppState.lastVaultPathKey)
+
         // Start watching the vault root recursively via FSEvents.
         startVaultEventStream(root: standardized(url))
         
@@ -1674,8 +1683,30 @@ class AppState: ObservableObject {
         commandPaletteMode = .files
         pendingTemplateRename = nil
 
+        // Clear the persisted last vault so the next launch shows the splash instead of
+        // silently re-opening the vault the user just deliberately exited.
+        UserDefaults.standard.removeObject(forKey: AppState.lastVaultPathKey)
+
         // Finally, clear the root URL to show the splash screen
         rootURL = nil
+    }
+
+    static let lastVaultPathKey = "lastOpenedVaultPath"
+
+    /// If a previously opened vault is remembered and still exists on disk, reopen it.
+    /// Called once at app launch before the splash screen would otherwise appear.
+    func restoreLastVaultIfAvailable() {
+        guard rootURL == nil else { return }
+        guard let path = UserDefaults.standard.string(forKey: AppState.lastVaultPathKey),
+              !path.isEmpty else { return }
+        let url = URL(fileURLWithPath: path)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            UserDefaults.standard.removeObject(forKey: AppState.lastVaultPathKey)
+            return
+        }
+        openFolder(url)
     }
 
     private func setupGit(for url: URL) {

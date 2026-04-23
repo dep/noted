@@ -579,7 +579,7 @@ struct ContentView: View {
 
                 // Exit vault button - far right
                 Button(action: { appState.exitVault() }) {
-                    Image(systemName: "xmark.circle")
+                    Image(systemName: "door.left.hand.open")
                 }
                 .buttonStyle(ChromeButtonStyle())
                 .keyboardShortcut("n", modifiers: [.command, .shift])

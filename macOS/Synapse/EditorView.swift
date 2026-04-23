@@ -1096,7 +1096,7 @@ func collapsibleToggleFrame(forMarkerRect markerRect: NSRect, textContainerOrigi
     // Place the button fully to the left of the list marker with a consistent gap,
     // without clamping to textContainerOrigin so it can go into the left margin.
     let buttonX = markerRect.minX - buttonSize - 4
-    let buttonY = round(markerRect.midY - buttonSize / 2) + 5
+    let buttonY = round(markerRect.midY - buttonSize / 2) - 2
     return NSRect(x: buttonX, y: buttonY, width: buttonSize, height: buttonSize)
 }
 
@@ -1231,6 +1231,13 @@ struct MarkdownTheme {
         return NSFont(descriptor: descriptor, size: size) ?? baseFont
     }
 
+    static func boldItalicFont(for settings: SettingsManager) -> NSFont {
+        let size = CGFloat(settings.editorFontSize)
+        let bold = boldFont(for: settings)
+        let descriptor = bold.fontDescriptor.withSymbolicTraits([.bold, .italic])
+        return NSFont(descriptor: descriptor, size: size) ?? bold
+    }
+
     static func lineHeightMultiple(for settings: SettingsManager) -> CGFloat {
         max(0.8, min(3.0, CGFloat(settings.editorLineHeight)))
     }
@@ -1290,6 +1297,10 @@ extension NSAttributedString.Key {
     /// its background color across the full container width, not just the glyph bounds.
     /// The value must be an `NSColor`.
     static let codeBlockFullWidthBackground = NSAttributedString.Key("Synapse.codeBlockFullWidthBackground")
+    /// Marks a character range as belonging to a blockquote so
+    /// `LinkAwareTextView.drawBackground(in:)` can paint a decorative accent bar
+    /// along the leading edge of every line in the range. Value must be an `NSColor`.
+    static let blockquoteLeftBorder = NSAttributedString.Key("Synapse.blockquoteLeftBorder")
 }
 
 /// Thread-safe regex cache for markdown styling outside of LinkAwareTextView.
@@ -1361,9 +1372,33 @@ func styleMarkdownContent(_ content: String, fontSize: CGFloat = 12) -> NSAttrib
         storage.addAttribute(.font, value: NSFont.systemFont(ofSize: fontSize, weight: .bold), range: range)
         dimDelims(range, 2)
     }
+    applyPattern("(?<![\\w_])_(?!_)(.+?)(?<!_)_(?![\\w_])") { range in
+        let desc = baseFont.fontDescriptor.withSymbolicTraits(.italic)
+        if let f = NSFont(descriptor: desc, size: fontSize) {
+            storage.addAttribute(.font, value: f, range: range)
+        }
+        dimDelims(range, 1)
+    }
     applyPattern("__(.+?)__") { range in
         storage.addAttribute(.font, value: NSFont.systemFont(ofSize: fontSize, weight: .bold), range: range)
         dimDelims(range, 2)
+    }
+    // Bold+italic — applied last so it wins over the bold and italic passes above on
+    // ***word*** spans (which would otherwise collapse to plain bold).
+    applyPattern("\\*\\*\\*(.+?)\\*\\*\\*") { range in
+        let desc = NSFont.systemFont(ofSize: fontSize, weight: .bold).fontDescriptor.withSymbolicTraits([.bold, .italic])
+        let font = NSFont(descriptor: desc, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        storage.addAttribute(.font, value: font, range: range)
+        dimDelims(range, 3)
+    }
+    // Strikethrough — double first, then single with word-boundary guards.
+    applyPattern("~~(.+?)~~") { range in
+        storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+        dimDelims(range, 2)
+    }
+    applyPattern("(?<![\\w~])~(?!~)(.+?)(?<!~)~(?![\\w~])") { range in
+        storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+        dimDelims(range, 1)
     }
     // Inline code
     applyPattern("`([^`\\n]+)`") { range in
@@ -1685,9 +1720,33 @@ extension LinkAwareTextView {
             storage.addAttribute(.font, value: boldFont, range: range)
             dimDelimiters(storage: storage, outerRange: range, delimLen: 2)
         }
+        // Single-underscore italic before double-underscore bold, same reason as * vs **.
+        // Word-boundary guards prevent matching inside identifiers like snake_case.
+        applyRegex("(?<![\\w_])_(?!_)(.+?)(?<!_)_(?![\\w_])", to: text, storage: storage, searchRange: searchRange) { range in
+            storage.addAttribute(.font, value: italicFont, range: range)
+            dimDelimiters(storage: storage, outerRange: range, delimLen: 1)
+        }
         applyRegex("__(.+?)__", to: text, storage: storage, searchRange: searchRange) { range in
             storage.addAttribute(.font, value: boldFont, range: range)
             dimDelimiters(storage: storage, outerRange: range, delimLen: 2)
+        }
+        // Bold+italic last so it overrides the bold/italic font applied on inner substrings.
+        let boldItalicFont = settings != nil ? MarkdownTheme.boldItalicFont(for: settings!) : {
+            let desc = NSFont.systemFont(ofSize: 15, weight: .bold).fontDescriptor.withSymbolicTraits([.bold, .italic])
+            return NSFont(descriptor: desc, size: 15) ?? NSFont.systemFont(ofSize: 15, weight: .bold)
+        }()
+        applyRegex("\\*\\*\\*(.+?)\\*\\*\\*", to: text, storage: storage, searchRange: searchRange) { range in
+            storage.addAttribute(.font, value: boldItalicFont, range: range)
+            dimDelimiters(storage: storage, outerRange: range, delimLen: 3)
+        }
+        // Strikethrough: ~~text~~ and single ~text~ (with guards so it doesn't hit ~/home or ~~~).
+        applyRegex("~~(.+?)~~", to: text, storage: storage, searchRange: searchRange) { range in
+            storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            dimDelimiters(storage: storage, outerRange: range, delimLen: 2)
+        }
+        applyRegex("(?<![\\w~])~(?!~)(.+?)(?<!~)~(?![\\w~])", to: text, storage: storage, searchRange: searchRange) { range in
+            storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            dimDelimiters(storage: storage, outerRange: range, delimLen: 1)
         }
         applyRegex("`([^`\\n]+)`", to: text, storage: storage, searchRange: searchRange) { range in
             storage.addAttributes([.font: monoFont, .backgroundColor: MarkdownTheme.codeBackground], range: range)
@@ -1741,6 +1800,14 @@ extension LinkAwareTextView {
             guard !calloutRanges.contains("\(range.location):\(range.length)") else { continue }
             guard NSIntersectionRange(range, scopeRange).length > 0 else { continue }
             storage.addAttribute(.foregroundColor, value: MarkdownTheme.dimColor, range: range)
+            // Indent the text so a colored accent bar can live in the gutter without
+            // overlapping the glyphs. drawBackground(in:) paints the bar.
+            let existing = storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle
+            let paraStyle = (existing?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+            paraStyle.firstLineHeadIndent = 16
+            paraStyle.headIndent = 16
+            storage.addAttribute(.paragraphStyle, value: paraStyle, range: range)
+            storage.addAttribute(.blockquoteLeftBorder, value: MarkdownTheme.linkColor, range: range)
         }
         for callout in semanticStyles.callouts {
             guard NSIntersectionRange(callout.range, scopeRange).length > 0 else { continue }
@@ -2247,6 +2314,50 @@ class LinkAwareTextView: NSTextView {
                 if bandRect.intersects(rect) {
                     color.setFill()
                     bandRect.fill()
+                }
+                lineStart = lineGlyphRange.location + lineGlyphRange.length
+            }
+            charIndex = effectiveRange.location + effectiveRange.length
+        }
+
+        // Decorative accent bar for blockquote ranges. Paragraph style supplies the
+        // leading indent (16pt); we paint a rounded bar of ~3pt in that gutter.
+        let barWidth: CGFloat = 3
+        let barInset: CGFloat = 4
+        charIndex = 0
+        while charIndex < length {
+            var effectiveRange = NSRange(location: NSNotFound, length: 0)
+            guard let color = storage.attribute(.blockquoteLeftBorder, at: charIndex, effectiveRange: &effectiveRange) as? NSColor,
+                  effectiveRange.location != NSNotFound else {
+                charIndex = effectiveRange.location != NSNotFound ? effectiveRange.location + effectiveRange.length : charIndex + 1
+                continue
+            }
+
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: effectiveRange, actualCharacterRange: nil)
+            var lineStart = glyphRange.location
+            let glyphEnd = glyphRange.location + glyphRange.length
+
+            while lineStart < glyphEnd {
+                var lineGlyphRange = NSRange(location: NSNotFound, length: 0)
+                let lineRect = layoutManager.lineFragmentRect(forGlyphAt: lineStart, effectiveRange: &lineGlyphRange, withoutAdditionalLayout: true)
+                guard lineGlyphRange.location != NSNotFound else { break }
+
+                let bandHeight = lineRect.height
+                guard bandHeight > 0 else {
+                    lineStart = lineGlyphRange.location + lineGlyphRange.length
+                    continue
+                }
+
+                let barRect = NSRect(
+                    x: insetX + barInset,
+                    y: lineRect.origin.y + insetY,
+                    width: barWidth,
+                    height: bandHeight
+                )
+                if barRect.intersects(rect) {
+                    color.withAlphaComponent(0.75).setFill()
+                    let path = NSBezierPath(roundedRect: barRect, xRadius: barWidth / 2, yRadius: barWidth / 2)
+                    path.fill()
                 }
                 lineStart = lineGlyphRange.location + lineGlyphRange.length
             }

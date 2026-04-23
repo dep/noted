@@ -352,6 +352,16 @@ struct MarkdownPreviewRenderer {
                 continue
             }
 
+            if text[i] == "~" {
+                let after = text.index(after: i)
+                if let end = text[after...].firstIndex(of: "~") {
+                    let content = String(text[after..<end])
+                    result += "<del>\(escapeHTML(content))</del>"
+                    i = text.index(after: end)
+                    continue
+                }
+            }
+
             if text[i] == "*" || text[i] == "_" {
                 let marker = String(text[i])
                 let after = text.index(after: i)
