@@ -5,6 +5,7 @@ import { marked } from 'marked'
 import type { WikilinkIndex } from '../lib/wikilinks'
 import { applyWikilinks } from '../lib/wikilinksHtml'
 import { splitFrontmatter } from '../lib/frontmatter'
+import { sanitizePreviewHtml } from '../lib/sanitizeHtml'
 
 marked.setOptions({ gfm: true, breaks: false })
 
@@ -20,7 +21,8 @@ export function MarkdownPreview({
   const { frontmatter, body } = useMemo(() => splitFrontmatter(source), [source])
   const html = useMemo(() => {
     const raw = marked.parse(body) as string
-    return wikilinkIndex ? applyWikilinks(raw, wikilinkIndex) : raw
+    const withLinks = wikilinkIndex ? applyWikilinks(raw, wikilinkIndex) : raw
+    return sanitizePreviewHtml(withLinks)
   }, [body, wikilinkIndex])
 
   const handleClick = useCallback(
