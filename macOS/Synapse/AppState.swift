@@ -1301,11 +1301,12 @@ class AppState: ObservableObject {
             }
         }
         
-        return matchingFiles.sorted { url1, url2 in
-            let date1 = effectiveCreatedDate(for: url1) ?? Date.distantPast
-            let date2 = effectiveCreatedDate(for: url2) ?? Date.distantPast
-            return date1 > date2
-        }
+        // Pre-compute one date per file, then sort against the captured tuple so the sort
+        // comparator doesn't re-fetch dates (previously 2 lookups × O(n log n) comparisons).
+        return matchingFiles
+            .map { (url: $0, date: effectiveCreatedDate(for: $0) ?? .distantPast) }
+            .sorted { $0.date > $1.date }
+            .map { $0.url }
     }
 
     /// Git-aware creation date for a URL. Prefers the author date of the file's first commit
@@ -1315,14 +1316,14 @@ class AppState: ObservableObject {
     /// Why: when a vault is cloned from GitHub, every file's filesystem `creationDate` reflects
     /// when the clone ran, not when the note was actually authored. Using the git author date
     /// restores the real authorship timeline.
-    private func effectiveCreatedDate(for url: URL) -> Date? {
+    func effectiveCreatedDate(for url: URL) -> Date? {
         if let git = gitDateCache[url.standardizedFileURL] { return git.created }
         return try? FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date
     }
 
     /// Git-aware modification date for a URL. Prefers the committer date of the file's most
     /// recent commit from `gitDateCache`, falling back to the filesystem `modificationDate`.
-    private func effectiveModifiedDate(for url: URL) -> Date? {
+    func effectiveModifiedDate(for url: URL) -> Date? {
         if let git = gitDateCache[url.standardizedFileURL] { return git.updated }
         return try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
     }
@@ -1333,16 +1334,17 @@ class AppState: ObservableObject {
         let calendar = Calendar.current
         let targetDay = calendar.startOfDay(for: date)
 
-        let matchingFiles = allFiles.filter { url in
-            guard let creationDate = effectiveCreatedDate(for: url) else { return false }
-            return calendar.startOfDay(for: creationDate) == targetDay
+        // Compute the date once per file, then sort against the captured tuple — avoids
+        // re-fetching in the sort comparator (previously 2 lookups per comparison × O(n log n)).
+        let matching: [(url: URL, date: Date)] = allFiles.compactMap { url in
+            guard let creationDate = effectiveCreatedDate(for: url),
+                  calendar.startOfDay(for: creationDate) == targetDay else { return nil }
+            return (url, creationDate)
         }
 
-        return matchingFiles.sorted { url1, url2 in
-            let date1 = effectiveCreatedDate(for: url1) ?? Date.distantPast
-            let date2 = effectiveCreatedDate(for: url2) ?? Date.distantPast
-            return date1 > date2
-        }
+        return matching
+            .sorted { $0.date > $1.date }
+            .map { $0.url }
     }
 
     /// Returns notes modified on a specific calendar day whose **creation** day is **before** that day.
@@ -1353,25 +1355,23 @@ class AppState: ObservableObject {
         let calendar = Calendar.current
         let targetDay = calendar.startOfDay(for: date)
 
-        let matchingFiles = allFiles.filter { url in
+        let matching: [(url: URL, date: Date)] = allFiles.compactMap { url in
             guard let creationDate = effectiveCreatedDate(for: url),
-                  let modificationDate = effectiveModifiedDate(for: url) else {
-                return false
-            }
+                  let modificationDate = effectiveModifiedDate(for: url) else { return nil }
 
             let modificationDay = calendar.startOfDay(for: modificationDate)
             let creationDay = calendar.startOfDay(for: creationDate)
 
-            return modificationDay == targetDay
-                && modificationDate > creationDate
-                && creationDay < targetDay
+            guard modificationDay == targetDay,
+                  modificationDate > creationDate,
+                  creationDay < targetDay else { return nil }
+
+            return (url, modificationDate)
         }
 
-        return matchingFiles.sorted { url1, url2 in
-            let date1 = effectiveModifiedDate(for: url1) ?? Date.distantPast
-            let date2 = effectiveModifiedDate(for: url2) ?? Date.distantPast
-            return date1 > date2
-        }
+        return matching
+            .sorted { $0.date > $1.date }
+            .map { $0.url }
     }
 
     /// Returns the cached note title → URL index.

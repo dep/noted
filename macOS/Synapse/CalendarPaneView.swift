@@ -95,12 +95,15 @@ struct CalendarPaneView: View {
     @State private var activityMap: [Date: Int] = [:]
 
     private func updateActivityMap() {
-        // Build activity map from all files
+        // Use the git-aware effective dates so activity badges reflect actual authorship
+        // history rather than filesystem timestamps (which are clone-time on synced vaults).
+        // This also replaces two FileManager.attributesOfItem calls per file with a single
+        // dict lookup into gitDateCache — ~2N syscalls → ~2N hashtable hits for N files.
         let notes = appState.allFiles.map { url in
             NoteActivityInfo(
                 url: url,
-                created: (try? FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date) ?? Date.distantPast,
-                modified: (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date.distantPast
+                created: appState.effectiveCreatedDate(for: url) ?? .distantPast,
+                modified: appState.effectiveModifiedDate(for: url) ?? .distantPast
             )
         }
         activityMap = activityCalculator.buildActivityMap(from: notes)

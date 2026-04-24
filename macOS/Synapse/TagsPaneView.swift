@@ -128,7 +128,11 @@ struct TagPageView: View {
     let tag: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Fetch the note list once per body evaluation — it's used for the header count and
+        // the list below; calling notesWithTag() twice scanned + sorted the vault twice.
+        let notes = appState.notesWithTag(tag)
+
+        return VStack(alignment: .leading, spacing: 0) {
             // Header
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top) {
@@ -141,7 +145,6 @@ struct TagPageView: View {
                                 .foregroundStyle(SynapseTheme.textPrimary)
                         }
 
-                        let notes = appState.notesWithTag(tag)
                         Text("\(notes.count) note\(notes.count == 1 ? "" : "s") with this tag")
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(SynapseTheme.textMuted)
@@ -178,7 +181,6 @@ struct TagPageView: View {
                 .frame(height: 1)
 
             // Notes list
-            let notes = appState.notesWithTag(tag)
             if notes.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("No notes found")
