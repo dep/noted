@@ -1,4 +1,4 @@
-# Synapse
+# Synapse Notes
 
 Synapse is a powerful Markdown-based knowledge management application exclusively built for macOS using SwiftUI. It's your second brain, backed by YOUR Git repository, and is deeply customizable.
 
